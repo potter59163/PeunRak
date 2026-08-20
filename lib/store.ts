@@ -15,6 +15,23 @@ import { Q9, GAD7, Q8, type Instrument, type Zone } from "./instruments";
 
 export type Risk = "low" | "medium" | "high";
 
+/**
+ * สถานะการส่งต่อ — ไล่ทีละขั้น ไม่ข้าม
+ * none → sent (ครูส่ง) → scheduled (รพ.นัด) → arrived (เด็กไปถึงจริง)
+ * ขั้น arrived คือตัวชี้วัดที่สำคัญที่สุด เพราะ referral leakage
+ * คือปัญหาที่ระบบเดิมวัดไม่ได้เลย
+ */
+export type RefStatus = "none" | "sent" | "scheduled" | "arrived";
+
+export const REF_FLOW: RefStatus[] = ["none", "sent", "scheduled", "arrived"];
+
+export const REF_LABEL: Record<RefStatus, string> = {
+  none: "ยังไม่ส่งต่อ",
+  sent: "ส่งต่อแล้ว",
+  scheduled: "นัดหมายแล้ว",
+  arrived: "เข้าพบผู้เชี่ยวชาญแล้ว",
+};
+
 export type Assessment = {
   q9: number;
   gad7: number;
@@ -44,6 +61,11 @@ export type Snap = Assessment & {
   updatedAt: number;
   history: number[];
   shared: boolean;
+  refStatus: RefStatus;
+  refSentAt?: number;
+  refScheduledAt?: number;
+  refArrivedAt?: number;
+  refNote?: string;
 };
 
 export const ZONE_TO_RISK: Record<Zone, Risk> = { calm: "low", watch: "medium", care: "high" };
@@ -104,6 +126,12 @@ async function ready(sql: SQL) {
           updated_at  bigint not null
         )
       `;
+      // เพิ่มทีหลังได้โดยไม่ทำลายข้อมูลเดิม (create table if not exists ไม่เพิ่มคอลัมน์ให้)
+      await sql`alter table assessments add column if not exists ref_status text not null default 'none'`;
+      await sql`alter table assessments add column if not exists ref_sent_at bigint`;
+      await sql`alter table assessments add column if not exists ref_scheduled_at bigint`;
+      await sql`alter table assessments add column if not exists ref_arrived_at bigint`;
+      await sql`alter table assessments add column if not exists ref_note text`;
       await sql`create index if not exists assessments_risk_idx on assessments (risk, q9 desc)`;
     })().catch((e) => {
       // อย่าให้ promise ที่ reject ค้างอยู่ ไม่งั้นทุก request ถัดไปพังตามโดยไม่ลองใหม่
@@ -135,13 +163,21 @@ function seed(
     updatedAt: Date.now() - minutesAgo * 6e4,
     history,
     shared: false,
+    refStatus: "none",
     ...extra,
   };
 }
 
 const SEED = (): Snap[] => [
-  seed("k19", "SCH042-K19", 17, 12, 3, 14, 143, [8, 11, 14, 16, 17], { name: "ปัณณ์ ว.", room: "ม.5/2", shared: true }),
-  seed("t21", "SCH042-T21", 11, 8, 1, 18, 7200, [19, 16, 13, 11], { name: "ธนภร ส.", room: "ม.4/6", shared: true }),
+  seed("k19", "SCH042-K19", 17, 12, 3, 14, 143, [8, 11, 14, 16, 17], {
+    name: "ปัณณ์ ว.", room: "ม.5/2", shared: true,
+    refStatus: "sent", refSentAt: Date.now() - 3 * 864e5,
+  }),
+  seed("t21", "SCH042-T21", 11, 8, 1, 18, 7200, [19, 16, 13, 11], {
+    name: "ธนภร ส.", room: "ม.4/6", shared: true,
+    refStatus: "arrived",
+    refSentAt: Date.now() - 12 * 864e5, refScheduledAt: Date.now() - 9 * 864e5, refArrivedAt: Date.now() - 2 * 864e5,
+  }),
   seed("b08", "SCH042-B08", 9, 6, 0, 9, 2880, [14, 12, 10, 9]),
   seed("m55", "SCH042-M55", 8, 5, 0, 6, 4320, [7, 8, 8]),
   seed("p90", "SCH042-P90", 4, 3, 0, 4, 540, [3, 4, 4]),
@@ -155,7 +191,14 @@ type Row = {
   q9_band: string; gad7_band: string; q8_band: string;
   crisis: boolean; covered: number; total: number; provisional: boolean;
   turns: number; history: number[] | string; updated_at: string | number;
+  ref_status: string | null;
+  ref_sent_at: string | number | null;
+  ref_scheduled_at: string | number | null;
+  ref_arrived_at: string | number | null;
+  ref_note: string | null;
 };
+
+const num = (v: string | number | null) => (v == null ? undefined : Number(v));
 
 const toSnap = (r: Row): Snap => ({
   id: r.id, code: r.code,
@@ -167,6 +210,11 @@ const toSnap = (r: Row): Snap => ({
   turns: r.turns,
   history: typeof r.history === "string" ? JSON.parse(r.history) : r.history,
   updatedAt: Number(r.updated_at),
+  refStatus: (r.ref_status ?? "none") as RefStatus,
+  refSentAt: num(r.ref_sent_at),
+  refScheduledAt: num(r.ref_scheduled_at),
+  refArrivedAt: num(r.ref_arrived_at),
+  refNote: r.ref_note ?? undefined,
 });
 
 async function write(sql: SQL, s: Snap) {
@@ -174,12 +222,15 @@ async function write(sql: SQL, s: Snap) {
     insert into assessments (
       id, code, name, room, shared, risk, q9, gad7, q8,
       q9_band, gad7_band, q8_band, crisis, covered, total,
-      provisional, turns, history, updated_at
+      provisional, turns, history, updated_at,
+      ref_status, ref_sent_at, ref_scheduled_at, ref_arrived_at, ref_note
     ) values (
       ${s.id}, ${s.code}, ${s.name ?? null}, ${s.room ?? null}, ${s.shared}, ${s.risk},
       ${s.q9}, ${s.gad7}, ${s.q8}, ${s.q9Band}, ${s.gad7Band}, ${s.q8Band},
       ${s.crisis}, ${s.covered}, ${s.total}, ${s.provisional}, ${s.turns},
-      ${JSON.stringify(s.history)}::jsonb, ${s.updatedAt}
+      ${JSON.stringify(s.history)}::jsonb, ${s.updatedAt},
+      ${s.refStatus}, ${s.refSentAt ?? null}, ${s.refScheduledAt ?? null},
+      ${s.refArrivedAt ?? null}, ${s.refNote ?? null}
     )
     on conflict (id) do update set
       code = excluded.code, name = excluded.name, room = excluded.room,
@@ -188,7 +239,10 @@ async function write(sql: SQL, s: Snap) {
       q9_band = excluded.q9_band, gad7_band = excluded.gad7_band, q8_band = excluded.q8_band,
       crisis = excluded.crisis, covered = excluded.covered, total = excluded.total,
       provisional = excluded.provisional, turns = excluded.turns,
-      history = excluded.history, updated_at = excluded.updated_at
+      history = excluded.history, updated_at = excluded.updated_at,
+      ref_status = excluded.ref_status, ref_sent_at = excluded.ref_sent_at,
+      ref_scheduled_at = excluded.ref_scheduled_at, ref_arrived_at = excluded.ref_arrived_at,
+      ref_note = excluded.ref_note
   `;
 }
 
@@ -241,10 +295,55 @@ export async function upsert(
     turns: meta.turns,
     updatedAt: Date.now(),
     history: [...(prev?.history ?? []), a.q9].slice(-8),
+    // คะแนนอัปเดตไม่ควรล้างสถานะส่งต่อที่ครูทำไว้แล้ว
+    refStatus: prev?.refStatus ?? "none",
+    refSentAt: prev?.refSentAt,
+    refScheduledAt: prev?.refScheduledAt,
+    refArrivedAt: prev?.refArrivedAt,
+    refNote: prev?.refNote,
   };
 
   if (sql) await write(sql, next);
   else mem.set(id, next);
 
   return next;
+}
+
+
+/** เลื่อนสถานะการส่งต่อไปข้างหน้าทีละขั้น ห้ามข้าม ห้ามถอยหลัง */
+export async function advanceReferral(
+  id: string,
+  to: RefStatus,
+  note?: string
+): Promise<Snap | null> {
+  const sql = db();
+  let cur: Snap | undefined;
+
+  if (sql) {
+    await ready(sql);
+    const rows = (await sql`select * from assessments where id = ${id}`) as Row[];
+    cur = rows[0] ? toSnap(rows[0]) : undefined;
+  } else {
+    if (mem.size === 0) SEED().forEach((x) => mem.set(x.id, x));
+    cur = mem.get(id);
+  }
+  if (!cur) return null;
+
+  const from = REF_FLOW.indexOf(cur.refStatus);
+  const next = REF_FLOW.indexOf(to);
+  if (next !== from + 1) return cur; // ข้ามขั้นหรือถอยหลัง ไม่ทำอะไร
+
+  const now = Date.now();
+  const updated: Snap = {
+    ...cur,
+    refStatus: to,
+    refNote: note ?? cur.refNote,
+    refSentAt: to === "sent" ? now : cur.refSentAt,
+    refScheduledAt: to === "scheduled" ? now : cur.refScheduledAt,
+    refArrivedAt: to === "arrived" ? now : cur.refArrivedAt,
+  };
+
+  if (sql) await write(sql, updated);
+  else mem.set(id, updated);
+  return updated;
 }

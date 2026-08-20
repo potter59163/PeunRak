@@ -3,12 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Shell, Button, Card, Input, Hotline } from "@/components/ui";
-import { Mark, Mail, Lock, Person, Users, ArrowRight } from "@/components/icons";
+import { Mark, Mail, Lock, Person, Users, Hospital, ArrowRight } from "@/components/icons";
 import { signIn, type Role } from "@/lib/session";
 
-const ROLES: { id: Role; label: string; Icon: typeof Person; hint: string }[] = [
-  { id: "student", label: "นักเรียน", Icon: Person, hint: "s6512@school.ac.th" },
-  { id: "counselor", label: "ครูแนะแนว", Icon: Users, hint: "guidance@school.ac.th" },
+const ROLES: { id: Role; label: string; Icon: typeof Person; hint: string; to: string }[] = [
+  { id: "student", label: "นักเรียน", Icon: Person, hint: "s6512@school.ac.th", to: "/chat" },
+  { id: "counselor", label: "ครูแนะแนว", Icon: Users, hint: "guidance@school.ac.th", to: "/counselor" },
+  { id: "specialist", label: "ผู้เชี่ยวชาญ", Icon: Hospital, hint: "psych@hospital.go.th", to: "/specialist" },
 ];
 
 export default function Login() {
@@ -20,7 +21,7 @@ export default function Login() {
 
   function go() {
     signIn({ role, email: email || cfg.hint, id: "a73" });
-    router.push(role === "student" ? "/chat" : "/counselor");
+    router.push(cfg.to);
   }
 
   return (
@@ -32,10 +33,10 @@ export default function Login() {
         </div>
 
         <Card className="p-6 shadow-[var(--sh-2)] sm:p-7">
-          <div className="mb-6 grid grid-cols-2 gap-1 rounded-full bg-surface-2 p-1.5">
+          <div className="mb-6 grid grid-cols-3 gap-1 rounded-full bg-surface-2 p-1.5">
             {ROLES.map((r) => (
               <button key={r.id} onClick={() => setRole(r.id)}
-                className={`flex min-h-[44px] items-center justify-center gap-2 rounded-full text-[0.9rem] font-medium transition ${
+                className={`flex min-h-[44px] items-center justify-center gap-1.5 rounded-full px-1 text-[0.82rem] font-medium transition ${
                   role === r.id ? "bg-surface text-accent shadow-[var(--sh-1)]" : "text-ink-3 hover:text-ink-2"}`}>
                 <r.Icon size={17} />
                 {r.label}

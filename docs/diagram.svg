@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1240 830" width="1240" height="830" font-family="IBM Plex Sans Thai, Sarabun, Tahoma, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#7C8DA6"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#D8503F"/>
+    </marker>
+    <style>
+      .box{fill:#FFF;stroke:#DCE6F4;stroke-width:1.5;rx:14}
+      .t{font-size:16px;fill:#0F1B2E;font-weight:500}
+      .s{font-size:13px;fill:#55697F}
+      .xs{font-size:12px;fill:#8B9BAF}
+      .lbl{font-size:12.5px;fill:#55697F}
+      .h{font-size:12px;fill:#2563EB;font-weight:600;letter-spacing:.06em}
+      .ln{stroke:#7C8DA6;stroke-width:1.6;fill:none;marker-end:url(#a)}
+    </style>
+  </defs>
+
+  <rect width="1240" height="830" fill="#F7FAFE"/>
+  <text x="40" y="46" font-size="21" font-weight="600" fill="#0F1B2E">เพื่อนรัก · PeunRak — สถาปัตยกรรมระบบ</text>
+  <text x="40" y="70" class="s">ระบบคัดกรองและส่งต่อสุขภาพจิตนักเรียน โดย AI ไม่ได้เป็นผู้ให้คะแนน</text>
+
+  <!-- ── ชั้นผู้ใช้ ── -->
+  <text x="40" y="112" class="h">ชั้นผู้ใช้</text>
+  <rect class="box" x="40" y="124" width="212" height="86"/>
+  <text x="58" y="152" class="t">นักเรียน</text>
+  <text x="58" y="174" class="s">เข้าระบบด้วยอีเมลโรงเรียน</text>
+  <text x="58" y="194" class="xs">ไม่ต้องกรอกข้อมูลส่วนตัวก่อนคุย</text>
+
+  <path class="ln" d="M252 167 H 322"/>
+
+  <rect class="box" x="322" y="124" width="212" height="86"/>
+  <text x="340" y="152" class="t">Private Chat</text>
+  <text x="340" y="174" class="s">คุยเรื่องทั่วไปในชีวิตประจำวัน</text>
+  <text x="340" y="194" class="xs">สตรีมตอบทีละคำ</text>
+
+  <!-- ── ชั้น AI ── -->
+  <text x="40" y="268" class="h">ชั้นประมวลผล — 3 ชั้น แยกหน้าที่ชัดเจน</text>
+
+  <rect class="box" x="40" y="282" width="248" height="118"/>
+  <text x="58" y="310" class="t">1 · สนทนา</text>
+  <text x="58" y="332" class="s">LLM คุยภาษาไทย</text>
+  <text x="58" y="352" class="xs">ไม่วินิจฉัย ไม่ให้คะแนน</text>
+  <text x="58" y="370" class="xs">ไม่แนะนำยา</text>
+  <text x="58" y="390" class="xs">พบสัญญาณอันตราย → หยุดถาม</text>
+
+  <path class="ln" d="M288 341 H 350"/>
+
+  <rect class="box" x="350" y="282" width="248" height="118"/>
+  <text x="368" y="310" class="t">2 · สกัดหลักฐาน</text>
+  <text x="368" y="332" class="s">map เข้าข้อของแบบประเมิน</text>
+  <text x="368" y="352" class="xs">ส่งออกเฉพาะ id ข้อ · คะแนน</text>
+  <text x="368" y="370" class="xs">· ความมั่นใจ</text>
+  <text x="368" y="390" class="xs">ไม่ส่งคำพูดของนักเรียนกลับมา</text>
+
+  <path class="ln" d="M598 341 H 660"/>
+
+  <rect x="660" y="282" width="248" height="118" fill="#EAF1FE" stroke="#2563EB" stroke-width="1.5" rx="14"/>
+  <text x="678" y="310" class="t">3 · คำนวณคะแนน</text>
+  <text x="678" y="332" class="s" fill="#2563EB">โค้ดธรรมดา ไม่ใช่ AI</text>
+  <text x="678" y="352" class="xs">9Q · GAD-7 · 8Q</text>
+  <text x="678" y="370" class="xs">ตามเกณฑ์กรมสุขภาพจิต</text>
+  <text x="678" y="390" class="xs">ทำซ้ำได้ ตรวจย้อนกลับได้</text>
+
+  <!-- ── เส้นแบ่งความเป็นส่วนตัว ── -->
+  <line x1="40" y1="446" x2="1200" y2="446" stroke="#D8503F" stroke-width="1.4" stroke-dasharray="7 6"/>
+  <rect x="40" y="432" width="330" height="26" fill="#F7FAFE"/>
+  <text x="48" y="451" font-size="12.5" font-weight="600" fill="#D8503F">เส้นแบ่งความเป็นส่วนตัว — ข้อความไม่ข้ามเส้นนี้</text>
+
+  <!-- ── ปลายทาง ── -->
+  <text x="40" y="494" class="h">ชั้นปลายทาง</text>
+
+  <path class="ln" d="M164 400 V 470 H 150 V 508"/>
+  <rect class="box" x="40" y="508" width="248" height="140"/>
+  <text x="58" y="536" class="t">นักเรียนเห็นผลก่อน</text>
+  <text x="58" y="558" class="s">แล้วเลือกเองว่าให้ใครรู้</text>
+  <text x="58" y="582" class="xs">L0 เก็บไว้ดูเอง</text>
+  <text x="58" y="602" class="xs">L1 ครูรู้แบบไม่ระบุตัวตน</text>
+  <text x="58" y="622" class="xs">L2 เปิดชื่อให้ครู</text>
+  <text x="58" y="640" class="xs">L3 ส่งต่อโรงพยาบาล</text>
+
+  <path class="ln" d="M288 578 H 350"/>
+
+  <rect class="box" x="350" y="508" width="248" height="140"/>
+  <text x="368" y="536" class="t">Dashboard ครูแนะแนว</text>
+  <text x="368" y="558" class="s">อัปเดตแบบ realtime</text>
+  <text x="368" y="582" class="xs">เห็น: คะแนน · ระดับ · แนวโน้ม</text>
+  <text x="368" y="602" class="xs">ไม่เห็น: บทสนทนา</text>
+  <text x="368" y="622" class="xs">"ข้อมูลยังไม่พอ" เมื่อหลักฐานบาง</text>
+  <text x="368" y="640" class="xs">เพื่อกันการสรุปว่าปลอดภัยเร็วเกินไป</text>
+
+  <path class="ln" d="M598 578 H 660"/>
+
+  <rect class="box" x="660" y="508" width="248" height="140"/>
+  <text x="678" y="536" class="t">เอกสารส่งต่อ 1 หน้า</text>
+  <text x="678" y="558" class="s">ให้ผู้เชี่ยวชาญอ่านก่อนพบเด็ก</text>
+  <text x="678" y="582" class="xs">คะแนนมาตรฐาน + แนวโน้ม</text>
+  <text x="678" y="602" class="xs">สิ่งที่โรงเรียนช่วยไปแล้ว</text>
+  <text x="678" y="622" class="xs">เส้นทางที่เป็นไปได้จริงในพื้นที่</text>
+  <text x="678" y="640" class="xs">ระบบไม่จัดลำดับคิวแทนแพทย์</text>
+
+  <path class="ln" d="M908 578 H 970"/>
+  <rect class="box" x="970" y="508" width="230" height="140"/>
+  <text x="988" y="536" class="t">ผู้เชี่ยวชาญ / รพ.</text>
+  <text x="988" y="558" class="s">ตัดสินใจด้วยข้อมูลที่ครบขึ้น</text>
+  <text x="988" y="582" class="xs">การวินิจฉัยและการจัดลำดับ</text>
+  <text x="988" y="602" class="xs">เป็นดุลยพินิจของแพทย์ทั้งหมด</text>
+
+  <!-- ── เส้นทางฉุกเฉิน ── -->
+  <path d="M784 400 V 424 H 1085 V 460" stroke="#D8503F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+  <rect x="970" y="282" width="230" height="118" fill="#FDECE9" stroke="#D8503F" stroke-width="1.5" rx="14"/>
+  <text x="988" y="310" class="t" fill="#B23F30">เส้นทางฉุกเฉิน</text>
+  <text x="988" y="332" class="s" fill="#B23F30">8Q ตั้งแต่ปานกลางขึ้นไป</text>
+  <text x="988" y="352" class="xs">แยกออกจากคะแนนความเสี่ยงรวม</text>
+  <text x="988" y="370" class="xs">แสดงสายด่วน 1323 / 1669 ทันที</text>
+  <text x="988" y="390" class="xs">ไม่ใช่เรื่องการรอคิว</text>
+  <path d="M1085 400 V 470" stroke="#D8503F" stroke-width="1.8" fill="none" marker-end="url(#ar)"/>
+  <text x="1100" y="440" font-size="12.5" fill="#B23F30" font-weight="600">แจ้งทันที</text>
+
+  <!-- ── หมายเหตุล่าง ── -->
+  <rect x="40" y="686" width="1160" height="96" fill="#FFF" stroke="#DCE6F4" stroke-width="1.5" rx="14"/>
+  <text x="60" y="714" class="t">การรับประกันความเป็นส่วนตัวอยู่ที่ระดับโครงสร้าง ไม่ใช่แค่ระดับการตั้งค่า</text>
+  <text x="60" y="740" class="s">· ตารางฐานข้อมูลไม่มีคอลัมน์สำหรับเก็บบทสนทนา — ต่อให้โค้ดฝั่งแอปพลาด ก็ไม่มีที่ให้ข้อความลง</text>
+  <text x="60" y="762" class="s">· ชั้นสกัดหลักฐานไม่ขอคำพูดของนักเรียนกลับมา ทั้งในคำสั่งและในโครงสร้างข้อมูลที่กำหนดไว้</text>
+  <text x="660" y="740" class="s">· นักเรียนเป็นผู้เลือกระดับการเปิดเผยเอง และเปลี่ยนได้ตลอดเวลา</text>
+  <text x="660" y="762" class="s">· ข้อยกเว้นเดียวคือเมื่อประเมินว่าชีวิตกำลังตกอยู่ในอันตราย ซึ่งแจ้งให้ทราบตั้งแต่หน้าแรก</text>
+</svg>

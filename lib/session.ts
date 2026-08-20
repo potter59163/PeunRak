@@ -1,6 +1,6 @@
 "use client";
 
-export type Role = "student" | "counselor";
+export type Role = "student" | "counselor" | "specialist";
 export type Me = { role: Role; email: string; id: string; name?: string; room?: string; shared?: boolean };
 
 const KEY = "kw.me";
