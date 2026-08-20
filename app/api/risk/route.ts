@@ -151,11 +151,14 @@ export async function POST(req: Request) {
   });
 
   // คืนเฉพาะตัวเลข ไม่มีเนื้อหาใด ๆ
-  return Response.json({
-    risk: snap.risk,
-    q9: snap.q9, gad7: snap.gad7, q8: snap.q8,
-    crisis: snap.crisis,
-    covered: snap.covered, total: snap.total,
-    provisional: snap.provisional,
-  });
+  return Response.json(
+    {
+      risk: snap.risk,
+      q9: snap.q9, gad7: snap.gad7, q8: snap.q8,
+      crisis: snap.crisis,
+      covered: snap.covered, total: snap.total,
+      provisional: snap.provisional,
+    },
+    { headers: { "Content-Type": "application/json; charset=utf-8" } }
+  );
 }
