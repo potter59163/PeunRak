@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# เพื่อนรัก · PeunRak
 
-## Getting Started
-
-First, run the development server:
+เพื่อนที่คุยด้วยได้ ก่อนจะบอกใคร
+ระบบดูแลสุขภาพจิตนักเรียน — MVP สำหรับ Mahidol Public Health Hackathon 2026
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## เลือกโมเดล
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+ระบบเลือกให้อัตโนมัติจากคีย์ที่มีอยู่ — **Gemini → Claude → โหมดสาธิต**
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cp .env.example .env.local
+```
 
-## Learn More
+| ใส่คีย์ตัวไหน | ใช้อะไร | คีย์เอาจากไหน |
+|---|---|---|
+| `GEMINI_API_KEY` | `gemini-3.5-flash` (แชท) + `gemini-3.5-flash-lite` (ประเมินเสี่ยง) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) — **มี free tier** |
+| `ANTHROPIC_API_KEY` | `claude-sonnet-5` + `claude-haiku-4-5` | [console.anthropic.com](https://console.anthropic.com) |
+| ไม่ใส่เลย | โหมดสาธิต (`lib/fallback.ts`) | — |
 
-To learn more about Next.js, take a look at the following resources:
+ต้อง **restart dev server** หลังใส่คีย์ และเปลี่ยนรุ่นได้ด้วย `GEMINI_CHAT_MODEL` / `GEMINI_FAST_MODEL`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+โค้ดที่สลับผู้ให้บริการอยู่ที่ [`lib/llm.ts`](lib/llm.ts) ไฟล์เดียว — ส่วนอื่นของแอปไม่รู้ว่าใช้เจ้าไหน
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+โหมดสาธิตตอบตามหัวข้อที่เด็กพูดจริงและมีเส้นทางฉุกเฉินครบ มีป้าย "โหมดสาธิต" บอกบนหน้าแชท
+แต่ไม่ฉลาดเท่าโมเดลจริง — มีไว้กันเดโมพัง ไม่ใช่ตัวจริง
 
-## Deploy on Vercel
+## เข้าใช้งาน
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+หน้าแรกคือ login ด้วยอีเมลโรงเรียน เลือกบทบาทได้ 2 แบบ (เดโมกดเข้าได้เลย ยังไม่เช็ครหัส)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| บทบาท | เข้าไปเจอ |
+|---|---|
+| นักเรียน | `/chat` แล้วมีแท็บล่าง: คุย · แบบทดสอบ · โปรไฟล์ |
+| ครูแนะแนว | `/counselor` แดชบอร์ดความเสี่ยงแบบ realtime |
+
+## AI สองตัว ทำงานคนละหน้าที่
+
+```
+ตัวที่ 1  สนทนา         /api/chat    Claude Sonnet 5   — คุยกับนักเรียน
+ตัวที่ 2  ประเมินเสี่ยง   /api/risk    Claude Haiku 4.5  — ทำงานเบื้องหลัง ไม่โผล่ให้นักเรียนเห็น
+ตัวที่ 3  คำนวณคะแนน    lib/instruments.ts  — โค้ดล้วน ไม่มี AI
+```
+
+**AI ตัวที่สองคือหัวใจของสถาปัตยกรรมความเป็นส่วนตัว** — มันอ่านบทสนทนาเพื่อประเมิน
+แต่ `lib/store.ts` เก็บเฉพาะตัวเลข (`score`, `risk`, `turns`) ไม่มีข้อความสักคำถูกบันทึก
+ครูจึงได้สัญญาณเตือนแบบ realtime โดยไม่มีทางรู้ว่านักเรียนคุยเรื่องอะไร
+
+ทดสอบได้เอง: เปิด `/chat` พิมพ์อะไรก็ได้ แล้วเปิด `/counselor` อีกแท็บ — คะแนนขยับใน 3 วินาที
+
+## หน้าจอ
+
+| เส้นทาง | |
+|---|---|
+| `/` | login อีเมลโรงเรียน · เลือกบทบาท |
+| `/chat` | คุยกับ AI สตรีมเรียลไทม์ + ป้ายบอกว่ากำลังถูกประเมิน |
+| `/tests` `/tests/[id]` | 2Q · 9Q · GAD-7 · 8Q ทำเองได้ |
+| `/profile` | ข้อมูลส่วนตัว ผู้ปกครอง ประวัติการรักษา + สวิตช์เปิดชื่อให้ครู |
+| `/counselor` | แดชบอร์ด realtime (poll ทุก 3 วิ) |
+| `/result` | สรุปจากแชท + ที่มาของคะแนน + บันไดการเปิดเผย |
+| `/referral` | เอกสารส่งต่อ + เส้นทางในพื้นที่ |
+
+## ดีไซน์
+
+ฟ้า/ขาว clean modern · IBM Plex Sans Thai · **ไม่มีอิโมจิ** ไอคอน SVG วาดเองทั้งหมด
+สายด่วน 1323 อยู่ทุกหน้า · เคารพ `prefers-reduced-motion` · รองรับ dark mode
+
+## ยังไม่ได้ทำ
+
+- `lib/store.ts` เป็น in-memory ของจริงต้องเป็น Postgres + Row Level Security
+- login ยังไม่ verify จริง ของจริงต้องเป็น Google Workspace / Microsoft ของโรงเรียน
+- **[ต้องยืนยัน]** เกณฑ์จุดตัดใน `lib/instruments.ts` ต้องให้ผู้เชี่ยวชาญตรวจ + เช็กลิขสิทธิ์แบบประเมิน
+- **[ต้องยืนยัน]** ข้อมูลสถานพยาบาลใน `lib/demo.ts` เป็นตัวอย่าง
+
+แผนฉบับเต็ม: `../project-plan.md`

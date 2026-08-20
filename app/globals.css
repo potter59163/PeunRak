@@ -1,26 +1,122 @@
 @import "tailwindcss";
 
+/* เพื่อนรัก — ธีมสว่างอย่างเดียว ฟ้า/ขาว มนนุ่ม */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper:      #F4F8FE;
+  --paper-2:    #EAF1FC;
+  --surface:    #FFFFFF;
+  --surface-2:  #F3F8FF;
+  --ink:        #0F1B2E;
+  --ink-2:      #55697F;
+  --ink-3:      #93A4B8;
+  --line:       #E7EFFA;
+  --line-soft:  #F0F5FC;
+
+  --accent:      #2563EB;
+  --accent-2:    #4E8AF8;
+  --accent-ink:  #FFFFFF;
+  --accent-soft: #E8F0FE;
+
+  --zone-calm:       #0D9488;
+  --zone-calm-soft:  #DFF5F2;
+  --zone-watch:      #C2790B;
+  --zone-watch-soft: #FCF2DE;
+  --zone-care:       #E05543;
+  --zone-care-soft:  #FDE9E6;
+
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 22px;
+  --r-xl: 28px;
+
+  --sh-1: 0 1px 2px rgb(15 27 46 / .04), 0 4px 14px -8px rgb(15 27 46 / .10);
+  --sh-2: 0 2px 6px rgb(15 27 46 / .05), 0 16px 36px -16px rgb(15 27 46 / .18);
+  --sh-btn: 0 4px 14px -4px rgb(37 99 235 / .45);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-calm: var(--zone-calm);
+  --color-calm-soft: var(--zone-calm-soft);
+  --color-watch: var(--zone-watch);
+  --color-watch-soft: var(--zone-watch-soft);
+  --color-care: var(--zone-care);
+  --color-care-soft: var(--zone-care-soft);
+
+  --font-sans: var(--font-plex-thai), ui-sans-serif, system-ui, sans-serif;
+  --radius-card: var(--r-lg);
+  --shadow-card: var(--sh-1);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+* { -webkit-tap-highlight-color: transparent; }
+
+/* ล็อกธีมสว่าง ไม่ตามระบบ */
+html { color-scheme: only light; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100dvh;
+  color: var(--ink);
+  font-family: var(--font-plex-thai), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(1100px 620px at 8% -8%, #FFFFFF 0%, transparent 62%),
+    radial-gradient(900px 560px at 104% 4%, #E4EEFC 0%, transparent 58%),
+    linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+  background-attachment: fixed;
 }
+
+.th { word-break: break-word; overflow-wrap: anywhere; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+::selection { background: var(--accent-soft); color: var(--ink); }
+
+/* ปุ่มหลัก — ไล่สีบาง ๆ ให้ดูมีมิติ */
+.btn-grad {
+  background-image: linear-gradient(180deg, var(--accent-2) 0%, var(--accent) 100%);
+  box-shadow: var(--sh-btn);
+}
+.btn-grad:hover { filter: brightness(1.06); }
+.btn-grad:active { transform: translateY(1px); filter: brightness(.97); }
+
+/* การ์ดที่กดได้ — ยกขึ้นนิดเดียวตอน hover */
+.lift { transition: transform .18s ease, box-shadow .18s ease, background-color .18s ease; }
+.lift:hover { transform: translateY(-2px); box-shadow: var(--sh-2); }
+.lift:active { transform: translateY(0); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
+.rise { animation: rise .3s cubic-bezier(.22,.68,.32,1) both }
+
+@keyframes dot { 0%,60%,100% { opacity:.2 } 30% { opacity:.9 } }
+.dot { animation: dot 1.2s ease-in-out infinite }
+
+@keyframes ping { 0% { transform: scale(1); opacity:.55 } 80%,100% { transform: scale(2.4); opacity:0 } }
+.ping { animation: ping 2s cubic-bezier(0,0,.2,1) infinite }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration:.01ms !important; transition-duration:.01ms !important }
+  .lift:hover { transform: none }
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px }
+::-webkit-scrollbar-thumb { background: #DCE7F6; border-radius: 99px; border: 3px solid transparent; background-clip: padding-box }
+::-webkit-scrollbar-thumb:hover { background: #C9D9EE; background-clip: padding-box }
+::-webkit-scrollbar-track { background: transparent }
+
+@media print { .no-print { display: none !important } body { background: #fff } }
