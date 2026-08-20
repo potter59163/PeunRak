@@ -76,3 +76,33 @@ cp .env.example .env.local
 - **[ต้องยืนยัน]** ข้อมูลสถานพยาบาลใน `lib/demo.ts` เป็นตัวอย่าง
 
 แผนฉบับเต็ม: `../project-plan.md`
+
+---
+
+## Deploy ขึ้น Vercel
+
+1. [vercel.com/new](https://vercel.com/new) → Import repo นี้ → ไม่ต้องแก้ config อะไร
+2. ใส่ Environment Variable: `GEMINI_API_KEY`
+3. Deploy
+
+### ⚠️ ต้องต่อ Redis ด้วย ไม่งั้นฟีเจอร์ realtime จะไม่ทำงาน
+
+Vercel รันแบบ serverless ซึ่งแยกหลาย instance
+ถ้าเก็บ state ไว้ใน memory `/api/risk` จะเขียนที่ instance หนึ่ง
+แต่ `/api/monitor` อาจไปอ่านอีก instance หนึ่ง — ครูจะไม่เห็นคะแนนที่เด็กเพิ่งทำ
+
+**วิธีต่อ** — Vercel Dashboard → โปรเจกต์ → **Storage** → **Upstash Redis** (มี free tier) → Connect
+
+Vercel จะใส่ env ให้เองอัตโนมัติ โค้ดตรวจเจอแล้วสลับไปใช้ Redis ทันที ไม่ต้องแก้อะไร
+
+`lib/store.ts` รองรับชื่อ env ทั้งสองแบบ:
+
+| ที่มา | env |
+|---|---|
+| Vercel KV | `KV_REST_API_URL` · `KV_REST_API_TOKEN` |
+| Upstash โดยตรง | `UPSTASH_REDIS_REST_URL` · `UPSTASH_REDIS_REST_TOKEN` |
+
+ไม่มีทั้งคู่ → ใช้ memory (พอสำหรับ dev บนเครื่อง)
+
+**เช็คว่าต่อติดไหม:** เปิด `/api/monitor` แล้วดูฟิลด์ `storage`
+ต้องได้ `"redis"` ถ้าได้ `"memory"` แปลว่ายังไม่ได้ต่อ

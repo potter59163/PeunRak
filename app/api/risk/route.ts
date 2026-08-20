@@ -144,7 +144,7 @@ export async function POST(req: Request) {
     provisional,
   };
 
-  const snap = upsert(id, assessment, {
+  const snap = await upsert(id, assessment, {
     risk: ZONE_TO_RISK[zone],
     turns,
     ...profile,
