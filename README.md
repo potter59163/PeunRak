@@ -85,24 +85,31 @@ cp .env.example .env.local
 2. ใส่ Environment Variable: `GEMINI_API_KEY`
 3. Deploy
 
-### ⚠️ ต้องต่อ Redis ด้วย ไม่งั้นฟีเจอร์ realtime จะไม่ทำงาน
+### ⚠️ ต้องต่อฐานข้อมูลด้วย ไม่งั้นฟีเจอร์ realtime จะไม่ทำงาน
 
 Vercel รันแบบ serverless ซึ่งแยกหลาย instance
 ถ้าเก็บ state ไว้ใน memory `/api/risk` จะเขียนที่ instance หนึ่ง
-แต่ `/api/monitor` อาจไปอ่านอีก instance หนึ่ง — ครูจะไม่เห็นคะแนนที่เด็กเพิ่งทำ
+แต่ `/api/monitor` อาจไปอ่านอีก instance หนึ่ง — ครูจะไม่เห็นคะแนนที่นักเรียนเพิ่งทำ
 
-**วิธีต่อ** — Vercel Dashboard → โปรเจกต์ → **Storage** → **Upstash Redis** (มี free tier) → Connect
+**วิธีต่อ** — Vercel Dashboard → โปรเจกต์ → **Storage** → **Neon** (free tier) → Connect
 
-Vercel จะใส่ env ให้เองอัตโนมัติ โค้ดตรวจเจอแล้วสลับไปใช้ Redis ทันที ไม่ต้องแก้อะไร
+Vercel ใส่ env ให้เอง โค้ดตรวจเจอแล้วสลับไปใช้ Postgres ทันที **ไม่ต้อง migrate เอง**
+ตารางถูกสร้างอัตโนมัติในการเรียกครั้งแรก (`create table if not exists`)
 
-`lib/store.ts` รองรับชื่อ env ทั้งสองแบบ:
-
-| ที่มา | env |
-|---|---|
-| Vercel KV | `KV_REST_API_URL` · `KV_REST_API_TOKEN` |
-| Upstash โดยตรง | `UPSTASH_REDIS_REST_URL` · `UPSTASH_REDIS_REST_TOKEN` |
-
-ไม่มีทั้งคู่ → ใช้ memory (พอสำหรับ dev บนเครื่อง)
+รองรับชื่อ env: `DATABASE_URL` · `POSTGRES_URL` · `NEON_DATABASE_URL`
+ไม่มีสักตัว → ใช้ memory (พอสำหรับ dev บนเครื่อง)
 
 **เช็คว่าต่อติดไหม:** เปิด `/api/monitor` แล้วดูฟิลด์ `storage`
-ต้องได้ `"redis"` ถ้าได้ `"memory"` แปลว่ายังไม่ได้ต่อ
+ต้องได้ `"neon"` ถ้าได้ `"memory"` แปลว่ายังไม่ได้ต่อ หรือลืม redeploy
+
+### schema
+
+ตาราง `assessments` เก็บเฉพาะคะแนน — **ไม่มีคอลัมน์สำหรับบทสนทนา**
+ต่อให้โค้ดฝั่งแอปพลาด ก็ไม่มีที่ให้ข้อความที่นักเรียนพิมพ์ไปลง
+
+| กลุ่ม | คอลัมน์ |
+|---|---|
+| ตัวตน | `id` `code` `name` `room` `shared` |
+| คะแนน | `q9` `gad7` `q8` + `*_band` ตามเกณฑ์กรมสุขภาพจิต |
+| สถานะ | `risk` `crisis` `provisional` `covered` `total` `turns` |
+| แนวโน้ม | `history` (jsonb) `updated_at` |
