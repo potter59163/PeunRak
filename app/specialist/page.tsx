@@ -1,43 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Shell, TopBar, Card, RiskBadge, Spark, zoneClass, Button } from "@/components/ui";
-import { EyeOff, Logout, Doc, Check, Clock, Phone, Hospital } from "@/components/icons";
-import { REF_LABEL, type RefStatus, type Snap } from "@/lib/store";
+import { Shell, TopBar, Card, RiskBadge, Spark, zoneClass, Button, Hotline } from "@/components/ui";
+import { EyeOff, Logout, Doc, Check, Phone, Hospital } from "@/components/icons";
+import { Timeline, DomainTags, Schedule, HandoffNotes } from "@/components/handoff";
+import { thaiDate as day } from "@/lib/handoff";
+import type { Snap } from "@/lib/store";
 import { signOut } from "@/lib/session";
+import { usePoll } from "@/lib/client";
 
 const KEY = { low: "calm", medium: "watch", high: "care" } as const;
-const STEPS = ["sent", "scheduled", "arrived"] as const;
-
-const day = (t?: number) =>
-  t ? new Date(t).toLocaleDateString("th-TH", { day: "numeric", month: "short" }) : "—";
-
-function Timeline({ c }: { c: Snap }) {
-  const at: Record<(typeof STEPS)[number], number | undefined> = {
-    sent: c.refSentAt, scheduled: c.refScheduledAt, arrived: c.refArrivedAt,
-  };
-  const done = (STEPS as readonly string[]).indexOf(c.refStatus);
-  return (
-    <div className="flex items-center gap-1.5">
-      {STEPS.map((s, i) => {
-        const on = i <= done;
-        return (
-          <div key={s} className="flex flex-1 items-center gap-1.5">
-            <div className="min-w-0 flex-1">
-              <div className={`h-1.5 rounded-full ${on ? "bg-accent" : "bg-line"}`} />
-              <p className={`mt-1.5 truncate text-[0.7rem] ${on ? "text-ink-2" : "text-ink-3"}`}>
-                {REF_LABEL[s]}
-              </p>
-              <p className="text-[0.68rem] text-ink-3">{on ? day(at[s]) : "—"}</p>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function Specialist() {
   const router = useRouter();
@@ -47,22 +21,18 @@ export default function Specialist() {
   const load = useCallback(async () => {
     try {
       const d = await (await fetch("/api/monitor", { cache: "no-store" })).json();
-      setCases((d.cases as Snap[]).filter((c) => c.refStatus !== "none"));
+      // เห็นเฉพาะเคสที่ส่งต่อออกนอกโรงเรียน — เคสที่ครูแนะแนวดูแลเองในโรงเรียนไม่มาถึงหน้านี้
+      setCases((d.cases as Snap[]).filter((c) => c.refStatus !== "none" && (c.refTrack ?? "external") === "external"));
     } catch { /* เงียบไว้ รอบถัดไปลองใหม่ */ }
   }, []);
+  usePoll(load, 4000);
 
-  useEffect(() => {
-    load();
-    const iv = setInterval(load, 4000);
-    return () => clearInterval(iv);
-  }, [load]);
-
-  async function advance(id: string, to: RefStatus) {
+  async function act(id: string, body: Record<string, unknown>) {
     setBusy(id);
     await fetch("/api/referral", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, to }),
+      body: JSON.stringify({ id, ...body }),
     });
     await load();
     setBusy(null);
@@ -93,7 +63,7 @@ export default function Specialist() {
         <Card className="flex items-start gap-3 p-4">
           <EyeOff size={17} className="mt-0.5 shrink-0 text-ink-3" />
           <p className="text-[0.83rem] leading-relaxed text-ink-2">
-            เห็นเฉพาะเคสที่โรงเรียนส่งต่อมา พร้อมคะแนนตามเกณฑ์ 9Q / GAD-7 / 8Q
+            เห็นเฉพาะเคสที่โรงเรียนส่งต่อมา พร้อมคะแนนตามเกณฑ์ 9Q / GAD-7 / 8Q และหมวดเรื่องที่นักเรียนเลือกเปิดเอง ไม่มีบทสนทนา
             <span className="mt-1 block text-ink-3">การวินิจฉัยและการจัดลำดับความเร่งด่วนเป็นดุลยพินิจของผู้เชี่ยวชาญทั้งหมด</span>
           </p>
         </Card>
@@ -109,16 +79,13 @@ export default function Specialist() {
         <ul className="space-y-2.5">
           {cases.map((c) => {
             const z = zoneClass[KEY[c.risk]];
-            const nextStep: RefStatus | null =
-              c.refStatus === "sent" ? "scheduled" : c.refStatus === "scheduled" ? "arrived" : null;
-            const nextLabel = c.refStatus === "sent" ? "บันทึกการนัดหมาย" : "ยืนยันว่าเข้าพบแล้ว";
 
             return (
               <Card as="li" key={c.id} className="p-4">
                 <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[0.93rem] text-ink">{c.shared && c.name ? `${c.name} · ${c.room}` : c.code}</span>
+                      <span className="text-[0.93rem] text-ink">{c.name ? `${c.name} · ${c.room ?? "—"}` : c.code}</span>
                       <RiskBadge risk={c.risk} />
                       {c.crisis ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-care px-2.5 py-1 text-[0.72rem] font-medium text-white">
@@ -129,6 +96,7 @@ export default function Specialist() {
                     <p className="mt-1.5 text-[0.78rem] text-ink-3">
                       ส่งต่อเมื่อ {day(c.refSentAt)} · เก็บหลักฐาน {c.covered}/{c.total} ข้อ
                     </p>
+                    {c.domains.length > 0 ? <div className="mt-2.5"><DomainTags domains={c.domains} /></div> : null}
                   </div>
                   <span className={z.fg}><Spark values={c.history} w={64} h={24} /></span>
                 </div>
@@ -147,18 +115,31 @@ export default function Specialist() {
                   )}
                 </div>
 
-                <div className="mt-4 border-t border-line-soft pt-4">
-                  <Timeline c={c} />
+                <div className="mt-4 space-y-3 border-t border-line-soft pt-4">
+                  <Timeline status={c.refStatus} track={c.refTrack} sentAt={c.refSentAt} apptAt={c.apptAt} arrivedAt={c.refArrivedAt} />
+                  <HandoffNotes c={c} />
+                  {c.refStatus !== "arrived" && c.level < 2 ? (
+                    <p className="text-[0.78rem] leading-relaxed text-ink-3">
+                      นักเรียนยังไม่เปิดชื่อ — วันนัดจะขึ้นในแอปของเขา และครูแนะแนวเป็นผู้ประสาน
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <Link href="/referral" className="inline-flex min-h-[38px] items-center gap-2 rounded-full border border-line bg-surface px-4 text-[0.86rem] text-ink transition hover:bg-surface-2">
+                  <Link href={`/referral/${c.id}`} className="inline-flex min-h-[38px] items-center gap-2 rounded-full border border-line bg-surface px-4 text-[0.86rem] text-ink transition hover:bg-surface-2">
                     <Doc size={15} /> เอกสารส่งต่อ
                   </Link>
-                  {nextStep ? (
-                    <Button size="sm" disabled={busy === c.id} onClick={() => advance(c.id, nextStep)}>
-                      {busy === c.id ? "กำลังบันทึก" : <><Clock size={15} /> {nextLabel}</>}
-                    </Button>
+                  {c.refStatus === "sent" ? (
+                    <Schedule label="บันทึกการนัดหมาย" busy={busy === c.id} onSave={(apptAt) => act(c.id, { to: "scheduled", apptAt })} />
+                  ) : c.refStatus === "scheduled" ? (
+                    <>
+                      <Button size="sm" disabled={busy === c.id} onClick={() => act(c.id, { to: "arrived" })}>
+                        <Check size={15} /> ยืนยันว่าเข้าพบแล้ว
+                      </Button>
+                      {c.checkin === "missed" ? (
+                        <Schedule label="นัดใหม่" busy={busy === c.id} onSave={(apptAt) => act(c.id, { action: "reschedule", apptAt })} />
+                      ) : null}
+                    </>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 rounded-full bg-calm-soft px-3.5 py-2 text-[0.84rem] font-medium text-calm">
                       <Check size={15} /> เข้าพบแล้ว {day(c.refArrivedAt)}
@@ -170,6 +151,7 @@ export default function Specialist() {
           })}
         </ul>
       </main>
+      <Hotline />
     </Shell>
   );
 }

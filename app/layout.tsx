@@ -11,7 +11,7 @@ const plexThai = IBM_Plex_Sans_Thai({
 
 export const metadata: Metadata = {
   title: "เพื่อนรัก",
-  description: "เพื่อนที่คุยด้วยได้ ก่อนจะบอกใคร — ระบบดูแลสุขภาพจิตนักเรียน",
+  description: "คุยได้ก่อนจะบอกใคร แล้วพาไปหาคนที่ช่วยได้จริง — สะพาน ไม่ใช่ปลายทาง",
 };
 
 export const viewport: Viewport = {

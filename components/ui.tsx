@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Mark, Phone, ArrowLeft, Chat, Clipboard, Person } from "./icons";
+import { Mark, Phone, ArrowLeft, Chat, Clipboard, Person, Signpost } from "./icons";
 import { zoneClass } from "@/lib/zone";
 export { zoneClass };
 
@@ -67,8 +67,8 @@ export function RiskBadge({ risk }: { risk: "low" | "medium" | "high" }) {
   );
 }
 
-export function Spark({ values, className = "", w = 88, h = 28 }: { values: number[]; className?: string; w?: number; h?: number }) {
-  if (values.length < 2) values = [values[0] ?? 0, values[0] ?? 0];
+export function Spark({ values: given, className = "", w = 88, h = 28 }: { values: number[]; className?: string; w?: number; h?: number }) {
+  const values = given.length < 2 ? [given[0] ?? 0, given[0] ?? 0] : given;
   const min = Math.min(...values), max = Math.max(...values), span = max - min || 1, pad = 3;
   const pts = values.map((v, i) => [pad + (i * (w - pad * 2)) / (values.length - 1), h - pad - ((v - min) / span) * (h - pad * 2)] as const);
   const d = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
@@ -83,6 +83,7 @@ export function Spark({ values, className = "", w = 88, h = 28 }: { values: numb
 
 const TABS = [
   { href: "/chat", label: "คุย", Icon: Chat },
+  { href: "/journey", label: "ไปหาคน", Icon: Signpost },
   { href: "/tests", label: "แบบทดสอบ", Icon: Clipboard },
   { href: "/profile", label: "โปรไฟล์", Icon: Person },
 ];
@@ -96,7 +97,7 @@ export function BottomNav() {
           const on = path === href || path.startsWith(href + "/");
           return (
             <Link key={href} href={href}
-              className={`flex min-w-[82px] flex-col items-center gap-0.5 whitespace-nowrap rounded-full px-3.5 py-2 text-[0.72rem] transition ${
+              className={`flex min-w-[70px] flex-col items-center gap-0.5 whitespace-nowrap rounded-full px-2.5 py-2 text-[0.72rem] transition sm:min-w-[82px] sm:px-3.5 ${
                 on ? "bg-accent-soft font-medium text-accent" : "text-ink-3 hover:bg-surface-2 hover:text-ink-2"}`}>
               <Icon size={19} />
               {label}
@@ -108,12 +109,18 @@ export function BottomNav() {
   );
 }
 
+/** ต้องอยู่ทุกหน้า — 1323 สุขภาพจิต · 1669 ฉุกเฉิน */
 export function Hotline() {
+  const link = "font-medium text-ink-2 underline-offset-2 hover:underline";
   return (
-    <div className="no-print flex items-center gap-2 py-3 text-[0.78rem] text-ink-3">
+    <div className="no-print flex flex-wrap items-center gap-x-2 gap-y-1 py-3 text-[0.78rem] text-ink-3">
       <Phone size={13} />
       ไม่ไหว โทร
-      <a href="tel:1323" className="font-medium text-ink-2 underline-offset-2 hover:underline">1323</a>
+      <a href="tel:1323" className={link}>1323</a>
+      <span aria-hidden="true">·</span>
+      ฉุกเฉิน
+      <a href="tel:1669" className={link}>1669</a>
+      <span aria-hidden="true">·</span>
       ตลอด 24 ชม.
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Shell, TopBar, Card, BottomNav } from "@/components/ui";
+import { Shell, TopBar, Card, BottomNav, Hotline } from "@/components/ui";
 import { Clipboard, ChevronRight, Clock } from "@/components/icons";
 import { TESTS } from "@/lib/tests";
 
@@ -32,6 +32,7 @@ export default function Tests() {
           ))}
         </ul>
       </main>
+      <Hotline />
       <BottomNav />
     </Shell>
   );
