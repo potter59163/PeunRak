@@ -8,6 +8,7 @@
  * และ unit test ตรวจว่าช่วงคะแนนตรงกับ lib/instruments.ts
  */
 
+/** "gemini" คงไว้สำหรับคู่คะแนนที่เก็บก่อนเปลี่ยนผู้ให้บริการเป็น Claude — ระบบไม่สร้างค่านี้แล้ว */
 export const SOURCES = ["demo", "gemini", "claude"] as const;
 export type Source = (typeof SOURCES)[number];
 
