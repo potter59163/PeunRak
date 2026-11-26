@@ -20,7 +20,7 @@ npm run redteam                # บทสนทนาจำลอง 30 เค�
 
 ## เลือกโมเดล
 
-ระบบเลือกให้อัตโนมัติจากคีย์ที่มีอยู่ — **Gemini → Claude → โหมดสาธิต**
+ระบบใช้ **Claude (Anthropic)** เมื่อมีคีย์ และตกไป **โหมดสาธิต** เมื่อไม่มี
 
 ```bash
 cp .env.example .env.local
@@ -28,16 +28,15 @@ cp .env.example .env.local
 
 | ใส่คีย์ตัวไหน | ใช้อะไร | คีย์เอาจากไหน |
 |---|---|---|
-| `GEMINI_API_KEY` | `gemini-3.5-flash` (แชท) + `gemini-3.5-flash-lite` (ประเมินเสี่ยง) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| `ANTHROPIC_API_KEY` | `claude-sonnet-5` + `claude-haiku-4-5` | [console.anthropic.com](https://console.anthropic.com) |
+| `ANTHROPIC_API_KEY` | `claude-sonnet-5-5` (แชท) + `claude-haiku-5-5` (ประเมินเสี่ยง) | [console.anthropic.com](https://console.anthropic.com) |
 | ไม่ใส่เลย | โหมดสาธิต (`lib/fallback.ts`) | — |
 
-ต้อง **restart dev server** หลังใส่คีย์ และเปลี่ยนรุ่นได้ด้วย `GEMINI_CHAT_MODEL` / `GEMINI_FAST_MODEL`
+ต้อง **restart dev server** หลังใส่คีย์ ถ้าจะเปลี่ยนรุ่น แก้ค่าคงที่ `CLAUDE_CHAT` / `CLAUDE_FAST` ใน `lib/llm.ts` (แต่ละรุ่นรับพารามิเตอร์ไม่เหมือนกัน อ่านเอกสารของรุ่นนั้นก่อน)
 
-> **คีย์ Gemini แบบ free tier ใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น ห้ามใช้กับนักเรียนจริง** —
-> ดูเหตุผลที่หัวข้อ [ผู้ให้บริการ AI เก็บอะไร](#ผู้ให้บริการ-ai-เก็บอะไร)
+> **เดิมแอปนี้ใช้ Gemini เป็นตัวหลัก เปลี่ยนเป็น Claude เมื่อ 26 พ.ย. 2569** เพราะเงื่อนไขของ Google ห้ามใช้ Generative AI ในบริการที่ผู้อายุต่ำกว่า 18 ปีเข้าถึง —
+> ดูเหตุผลและเงื่อนไขของ Anthropic ที่หัวข้อ [ผู้ให้บริการ AI เก็บอะไร](#ผู้ให้บริการ-ai-เก็บอะไร)
 
-โค้ดที่สลับผู้ให้บริการอยู่ที่ [`lib/llm.ts`](lib/llm.ts) ไฟล์เดียว — ส่วนอื่นของแอปไม่รู้ว่าใช้เจ้าไหน
+โค้ดที่เรียกผู้ให้บริการอยู่ที่ [`lib/llm.ts`](lib/llm.ts) ไฟล์เดียว — ส่วนอื่นของแอปไม่รู้ว่าใช้เจ้าไหน ถ้าโมเดลปฏิเสธคำขอหรือเรียกไม่สำเร็จ แชทจะตอบด้วยกฎตายตัวใน `lib/fallback.ts` แทน นักเรียนจะไม่เจอหน้าจอว่าง
 
 โหมดสาธิตตอบตามหัวข้อที่เด็กพูดจริงและมีเส้นทางฉุกเฉินครบ มีป้าย "โหมดสาธิต" บอกบนหน้าแชท
 แต่ไม่ฉลาดเท่าโมเดลจริง — มีไว้กันเดโมพัง ไม่ใช่ตัวจริง (จับจากรายการคำ สำนวนที่ไม่อยู่ในรายการจะหลุด)
@@ -129,11 +128,13 @@ cp .env.example .env.local
 
 | ผู้ให้บริการ | สิ่งที่พบ | ผลต่อโครงการ |
 |---|---|---|
-| Gemini API **แบบไม่เสียเงิน** (free tier / AI Studio) | Google นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ และอาจมีคนอ่านเพื่อปรับปรุงคุณภาพ Google เองแนะนำว่าอย่าส่งข้อมูลอ่อนไหวหรือข้อมูลส่วนบุคคล | ใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น **ห้ามใช้กับนักเรียนจริง** |
-| Gemini API **แบบเปิด Cloud Billing** | ไม่นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ เก็บ log ระยะสั้นเพื่อตรวจการใช้ผิดนโยบาย | ใช้ในรอบนำร่องได้ ต้องเปิด billing ที่โปรเจกต์ของคีย์ |
-| Anthropic API | ลบ input/output ภายใน 30 วันโดยปริยาย ไม่ใช้ฝึกโมเดลเว้นแต่ได้รับอนุญาต ขอ zero data retention ได้เป็นรายองค์กร | ใช้ในรอบนำร่องได้ |
+| **Anthropic API (ที่แอปใช้อยู่)** | ลบ input/output ภายใน 30 วันโดยปริยาย ไม่ใช้ฝึกโมเดลเว้นแต่ได้รับอนุญาต ขอ zero data retention ได้เป็นรายองค์กร Usage Policy (มีผล 12 พ.ย. 2026) อนุญาตผลิตภัณฑ์ที่ให้บริการผู้เยาว์เมื่อทำตามแนวทางเพิ่มเติม และจัดการ “assessing, diagnosing, or treating a mental health condition” เป็น high-risk: ต้องมีผู้มีคุณวุฒิทบทวนก่อนส่งถึงผู้ใช้ และต้องบอกว่าใช้ AI | ใช้ในรอบนำร่องได้ **เมื่อ** ทำตามแนวทางสำหรับผู้เยาว์ และให้ครูแนะแนวหรือนักจิตวิทยาทบทวนผลก่อนแสดงต่อนักเรียน — ต้นแบบปัจจุบันยังแสดงผลให้นักเรียนทันที ต้องแก้ก่อนใช้จริง |
+| Gemini API **แบบไม่เสียเงิน** (ไม่ได้ใช้แล้ว) | Google นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ และอาจมีคนอ่านเพื่อปรับปรุงคุณภาพ Google เองแนะนำว่าอย่าส่งข้อมูลอ่อนไหวหรือข้อมูลส่วนบุคคล | ใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น **ห้ามใช้กับนักเรียนจริง** |
+| Gemini API **แบบเปิด Cloud Billing** (ไม่ได้ใช้แล้ว) | ไม่นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ เก็บ log ระยะสั้นเพื่อตรวจการใช้ผิดนโยบาย **แต่** Service Specific Terms ของ Google Cloud ห้ามใช้ Generative AI Service ในบริการที่ “directed towards or is likely to be accessed by individuals under the age of 18” และห้ามใช้ “for clinical purposes … as a substitute for professional medical advice” (Gemini API Additional Terms มีข้อทำนองเดียวกัน — **[ต้องยืนยัน]**) | **ใช้กับนักเรียนอายุต่ำกว่า 18 ปีไม่ได้** ใช้ได้กับการสาธิตและการทดสอบด้วยบทสนทนาที่แต่งขึ้นเท่านั้น |
 
 แหล่งที่มา: [Gemini API Additional Terms (ฉบับ 7 ต.ค. 2025)](https://ai.google.dev/gemini-api/terms-archive/terms_10_07_25) ·
+[Google Cloud Service Specific Terms](https://cloud.google.com/terms/service-terms) ·
+[Anthropic Usage Policy](https://www.anthropic.com/legal/aup) ·
 [Anthropic: commercial account data handling](https://privacy.claude.com/en/articles/8956058-i-have-a-commercial-account-how-do-you-handle-my-data) ·
 [Anthropic: API and data retention](https://platform.claude.com/docs/en/build-with-claude/api-and-data-retention)
 
@@ -334,7 +335,7 @@ npm run redteam -- --only=C1,M3 --verbose
 - login ยังไม่ verify จริง และ API ยังไม่มีการยืนยันตัวตน — ของจริงต้องเป็น Google Workspace / Microsoft ของโรงเรียน + Row Level Security
 - **[ต้องยืนยัน]** เกณฑ์จุดตัดใน `lib/instruments.ts` และพื้นความปลอดภัยใน `/api/risk` ต้องให้ผู้เชี่ยวชาญตรวจ + เช็กลิขสิทธิ์แบบประเมิน
 - **[ต้องยืนยัน]** สายด่วน 1300 / 1387 / 1413 / 1600 / 1165 ใน `lib/resources.ts` — เปิดแหล่งทางการ โทรทดสอบ แล้วค่อยเปลี่ยนเป็น `verified: true`
-- **[ต้องยืนยัน]** เงื่อนไขการเก็บข้อมูลของผู้ให้บริการ AI ฉบับปัจจุบัน และห้ามใช้คีย์ Gemini แบบไม่เสียเงินกับนักเรียนจริง
+- **[ต้องยืนยัน]** เงื่อนไขของผู้ให้บริการ AI ฉบับปัจจุบัน ทั้งเรื่องการเก็บข้อมูล การใช้กับผู้อายุต่ำกว่า 18 ปี และการใช้ด้านสุขภาพจิต — ก่อนใช้จริงต้องทำตามแนวทางของ Anthropic สำหรับผลิตภัณฑ์ที่ให้บริการผู้เยาว์ และให้ผู้มีคุณวุฒิทบทวนผลก่อนแสดงต่อนักเรียน
 - **[ต้องยืนยัน]** ข้อมูลสถานพยาบาลใน `lib/demo.ts` เป็นตัวอย่าง
 - **[ต้องให้ผู้เชี่ยวชาญตรวจ]** ข้อความที่นักเรียนเห็นทั้งหมด: การ์ดช่วยเหลือ (`lib/resources.ts`) · ขั้นต่อไป (`lib/care.ts`) ·
   กิจกรรมดูแลตัวเอง (`lib/selfcare.ts`) · ประโยคเปิดเรื่องกับเพื่อนและข้อความชวนไปหาคน (`components/bridge.tsx`) · คำตอบของโหมดสาธิต (`lib/fallback.ts`)
@@ -345,7 +346,7 @@ npm run redteam -- --only=C1,M3 --verbose
 ## Deploy ขึ้น Vercel
 
 1. [vercel.com/new](https://vercel.com/new) → Import repo นี้ → ไม่ต้องแก้ config อะไร
-2. ใส่ Environment Variable: `GEMINI_API_KEY` (โปรเจกต์ที่เปิด billing ถ้าจะใช้กับคนจริง) หรือ `ANTHROPIC_API_KEY`
+2. ใส่ Environment Variable: `ANTHROPIC_API_KEY` (ถ้าเคยใส่ `GEMINI_API_KEY` ไว้ ลบออกได้ แอปไม่อ่านแล้ว)
 3. Deploy
 
 ### ⚠️ ต้องต่อฐานข้อมูลด้วย ไม่งั้นฟีเจอร์ realtime จะไม่ทำงาน
