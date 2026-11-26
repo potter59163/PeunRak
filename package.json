@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "redteam": "node scripts/redteam/run.mjs",
-    "redteam:demo": "node scripts/redteam/run.mjs --demo"
+    "redteam:demo": "node scripts/redteam/run.mjs --demo",
+    "test": "node --test \"scripts/unit/*.test.mjs\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",

@@ -126,7 +126,7 @@ export default function Specialist() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <Link href="/referral" className="inline-flex min-h-[38px] items-center gap-2 rounded-full border border-line bg-surface px-4 text-[0.86rem] text-ink transition hover:bg-surface-2">
+                  <Link href={`/referral/${c.id}`} className="inline-flex min-h-[38px] items-center gap-2 rounded-full border border-line bg-surface px-4 text-[0.86rem] text-ink transition hover:bg-surface-2">
                     <Doc size={15} /> เอกสารส่งต่อ
                   </Link>
                   {c.refStatus === "sent" ? (

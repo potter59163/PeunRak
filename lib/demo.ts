@@ -1,4 +1,4 @@
-import type { Extraction, Vitals, Zone } from "./instruments";
+import type { Extraction, Zone } from "./instruments";
 import type { DomainHit } from "./domains";
 
 /** บทสนทนาตัวอย่าง ใช้ตอนยังไม่ได้ตั้งค่า ANTHROPIC_API_KEY
@@ -72,23 +72,6 @@ export const DEMO_EXTRACTIONS: Extraction[] = [
 export const DEMO_DOMAINS: DomainHit[] = [
   { id: "academic_pressure", confidence: 0.86 },
   { id: "sleep", confidence: 0.9 },
-];
-
-export const DEMO_VITALS: Vitals = {
-  sleepHours: 4,
-  sleepQuality: 2,
-  activityDays: 1,
-  screenHours: 9,
-  mood: 2,
-};
-
-export const DEMO_TOPICS = ["เรื่องเรียนและการสอบ", "การเปรียบเทียบตัวเองกับเพื่อน", "การนอน"];
-
-export const DEMO_TREND = [
-  { week: "สัปดาห์ 1", mood: 3, sleep: 6.5 },
-  { week: "สัปดาห์ 2", mood: 3, sleep: 5.5 },
-  { week: "สัปดาห์ 3", mood: 2, sleep: 5 },
-  { week: "สัปดาห์ 4", mood: 2, sleep: 4 },
 ];
 
 /* ---------------- ฝั่งครูแนะแนว ------------------------------------------ */

@@ -1,4 +1,4 @@
-import { getOwn, setLevel, requestHelp, setCompanion, checkIn, forStudent, type Disclosure } from "@/lib/store";
+import { getOwn, setLevel, requestHelp, setCompanion, checkIn, forStudent, cleanItems, type Disclosure } from "@/lib/store";
 import { cleanDomains } from "@/lib/domains";
 import { toLevel, isCompanion, isMissReason } from "@/lib/handoff";
 
@@ -31,6 +31,7 @@ export async function POST(req: Request) {
     name?: string;
     room?: string;
     domains?: unknown;
+    items?: unknown;
     companion?: string;
     went?: boolean;
     reason?: string;
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     name: b.name,
     room: b.room,
     domains: b.domains === undefined ? undefined : cleanDomains(b.domains),
+    items: b.items === undefined ? undefined : cleanItems(b.items),
   };
 
   if (b.action === "level" || b.action === "request") {

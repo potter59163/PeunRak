@@ -4,12 +4,13 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Shell, TopBar, Card, RiskBadge, Spark, zoneClass, Button, Hotline } from "@/components/ui";
-import { EyeOff, Logout, ChevronRight, Bell, Doc, Phone, Hospital, Check, Users, Bridge } from "@/components/icons";
+import { EyeOff, Logout, ChevronRight, Bell, Doc, Phone, Hospital, Check, Users, Bridge, Trend } from "@/components/icons";
 import { Funnel, DomainTags, LevelChip, Schedule, HandoffNotes, Timeline } from "@/components/handoff";
 import { REF_LABEL, TRACK_LABEL, defaultTrack, type RefTrack } from "@/lib/handoff";
 import type { Snap } from "@/lib/store";
 import { signOut } from "@/lib/session";
 import { usePoll } from "@/lib/client";
+import { CARE, CARE_ORDER, careStep, type CareStep } from "@/lib/care";
 
 const KEY = { low: "calm", medium: "watch", high: "care" } as const;
 const ago = (t: number) => {
@@ -23,12 +24,21 @@ const ago = (t: number) => {
 /** คำขอ "พาไปหาคน" ที่ยังไม่มีครูรับเรื่อง ขึ้นก่อนเสมอ */
 const pending = (c: Snap) => Boolean(c.helpRequestedAt && !c.helpAckAt);
 
+const STEP_TONE: Record<CareStep, string> = {
+  crisis: "bg-care text-white",
+  refer: "bg-care-soft text-care",
+  checkin: "bg-watch-soft text-watch",
+  self: "bg-calm-soft text-calm",
+  unknown: "bg-surface-2 text-ink-2",
+};
+
 export default function Counselor() {
   const router = useRouter();
   const [cases, setCases] = useState<Snap[]>([]);
   const [seeded, setSeeded] = useState(0);
   const [live, setLive] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [only, setOnly] = useState<CareStep | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -53,7 +63,13 @@ export default function Counselor() {
   const crisis = cases.filter((c) => c.crisis).length;
   const asking = cases.filter(pending);
   const counts = { high, medium: cases.filter((c) => c.risk === "medium").length, low: cases.filter((c) => c.risk === "low").length };
-  const ordered = [...asking, ...cases.filter((c) => !pending(c))];
+  const ordered = [...asking, ...cases.filter((c) => !pending(c))].filter((c) => !only || careStep(c) === only);
+
+  /** stepped care: แต่ละขั้นมีกี่เคส และกี่เคสยังไม่มีใครเริ่มดูแล */
+  const queue = CARE_ORDER.map((step) => {
+    const xs = cases.filter((c) => careStep(c) === step);
+    return { step, n: xs.length, waiting: xs.filter((c) => c.refStatus === "none").length };
+  });
 
   return (
     <Shell wide>
@@ -66,6 +82,9 @@ export default function Counselor() {
             </span>
             realtime
           </span>
+          <Link href="/admin" className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-[0.76rem] text-ink-2 transition hover:text-ink">
+            <Trend dir="up" size={14} /> ตัวชี้วัด
+          </Link>
           <button onClick={() => { signOut(); router.push("/"); }}
             className="grid size-9 place-items-center rounded-full text-ink-3 transition hover:bg-surface-2 hover:text-ink" aria-label="ออกจากระบบ">
             <Logout size={17} />
@@ -105,6 +124,35 @@ export default function Counselor() {
             <p className="flex-1 text-[0.89rem] text-ink">มี {high} เคสความเสี่ยงสูง ควรติดต่อวันนี้</p>
           </Card>
         ) : null}
+
+        {/* ---- stepped care: คิวตามขั้นการดูแล กดเพื่อกรองรายการด้านล่าง ---- */}
+        <Card as="section" className="p-4 sm:p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-[0.95rem] font-medium text-ink">คิวตามขั้นการดูแล</h2>
+            <p className="text-[0.78rem] text-ink-3">ขั้นคำนวณจากคะแนน ไม่ใช่ AI ตัดสิน</p>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {queue.map((q) => {
+              const on = only === q.step;
+              return (
+                <button key={q.step} type="button" aria-pressed={on} onClick={() => setOnly(on ? null : q.step)}
+                  className={`rounded-[var(--r-md)] border p-3 text-left transition ${on ? "border-accent/60 bg-accent-soft" : "border-line bg-surface hover:border-accent/40"}`}>
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-[0.7rem] font-medium ${STEP_TONE[q.step]}`}>{CARE[q.step].tag}</span>
+                  <span className="mt-2 block text-[1.35rem] font-semibold leading-none tabular-nums text-ink">{q.n}</span>
+                  <span className="mt-1 block text-[0.72rem] text-ink-3">
+                    {q.n === 0 ? "ไม่มีเคส" : q.step === "self" || q.step === "unknown" ? "ไม่ต้องดำเนินการ" : q.waiting > 0 ? `${q.waiting} เคสยังไม่มีใครดูแล` : "มีคนดูแลครบแล้ว"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {only ? (
+            <p className="mt-3 text-[0.8rem] leading-relaxed text-ink-2">
+              <span className="font-medium text-ink">{CARE[only].tag}:</span> {CARE[only].staff}
+              <button type="button" onClick={() => setOnly(null)} className="ml-2 text-accent underline underline-offset-2">ดูทั้งหมด</button>
+            </p>
+          ) : null}
+        </Card>
 
         <Funnel cases={cases} seeded={seeded} />
 
@@ -150,6 +198,7 @@ export default function Counselor() {
                           {c.helpAckAt ? "รับเรื่องแล้ว" : "ขอให้ครูติดต่อกลับ"}
                         </span>
                       ) : null}
+                      <span className={`rounded-full px-2.5 py-1 text-[0.72rem] font-medium ${STEP_TONE[careStep(c)]}`}>{CARE[careStep(c)].tag}</span>
                       <LevelChip level={c.level} />
                     </div>
                     <p className="mt-1.5 text-[0.78rem] text-ink-3">
@@ -214,13 +263,32 @@ export default function Counselor() {
                           ) : null}
                         </div>
                       ) : null}
-                      {mine ? (
-                        <Button size="sm" variant="ghost" className="-ml-3" disabled={busy === c.id} onClick={() => act(c.id, { action: "escalate" })}>
-                          <Hospital size={15} /> ส่งต่อผู้เชี่ยวชาญภายนอก
+                      <div className="flex flex-wrap items-center gap-1">
+                        {mine ? (
+                          <Button size="sm" variant="ghost" className="-ml-3" disabled={busy === c.id} onClick={() => act(c.id, { action: "escalate" })}>
+                            <Hospital size={15} /> ส่งต่อผู้เชี่ยวชาญภายนอก
+                          </Button>
+                        ) : null}
+                        <Button size="sm" variant="ghost" className={mine ? "" : "-ml-3"} href={`/referral/${c.id}`}>
+                          <Doc size={15} /> เอกสารส่งต่อ
                         </Button>
-                      ) : null}
+                      </div>
                     </>
                   )}
+
+                  {/* ตัวชี้วัด "คัดกรองเจอเร็ว": ครูเป็นคนบอกว่ารู้จักเคสนี้มาก่อนไหม — ตอบได้เมื่อรู้ว่าเป็นใครเท่านั้น */}
+                  {c.risk !== "low" && c.level >= 2 ? (
+                    <div className="flex flex-wrap items-center gap-2 text-[0.78rem] text-ink-3">
+                      ก่อนระบบเจอ ครูรู้อยู่แล้วไหมว่าเด็กคนนี้กำลังลำบาก
+                      {([[false, "ไม่เคยรู้"], [true, "รู้อยู่แล้ว"]] as const).map(([v, label]) => (
+                        <button key={label} type="button" aria-pressed={c.priorKnown === v} disabled={busy === c.id}
+                          onClick={() => act(c.id, { action: "known", known: v })}
+                          className={`min-h-[32px] rounded-full border px-3 text-[0.76rem] transition ${c.priorKnown === v ? "border-accent/60 bg-accent-soft font-medium text-accent" : "border-line bg-surface text-ink-2 hover:border-accent/40"}`}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line-soft pt-3">
@@ -244,7 +312,7 @@ export default function Counselor() {
         <Card>
           <Link href="/referral" className="flex items-center gap-3.5 p-4 transition hover:bg-surface-2">
             <Doc size={18} className="shrink-0 text-ink-3" />
-            <span className="flex-1 text-[0.92rem] text-ink">เอกสารส่งต่อ</span>
+            <span className="flex-1 text-[0.92rem] text-ink">เอกสารส่งต่อทั้งหมด</span>
             <ChevronRight size={16} className="text-ink-3" />
           </Link>
         </Card>

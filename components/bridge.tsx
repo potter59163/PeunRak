@@ -5,7 +5,7 @@ import { Button, Card } from "./ui";
 import { Bridge, Users, Phone, Person, Close, Check, ArrowLeft, ChevronRight, Eye, EyeOff } from "./icons";
 import { shown, type DomainHit, type DomainId } from "@/lib/domains";
 import { DOMAIN_HELP, RESOURCES, resourcesFor, type Resource } from "@/lib/resources";
-import { askCounselor, useHasName } from "@/lib/client";
+import { askCounselor, useHasName, track, trackOnce } from "@/lib/client";
 import type { HandoffState, Level } from "@/lib/handoff";
 
 /**
@@ -83,6 +83,12 @@ export function BridgeSheet({ step, onStep, domains = [], onSent }: {
 
   const close = () => onStep(null);
 
+  useEffect(() => { track("bridge_open"); }, []);
+  useEffect(() => {
+    if (step === "friend") track("bridge_friend");
+    if (step === "hotline") track("bridge_hotline");
+  }, [step]);
+
   useEffect(() => {
     panel.current?.focus();
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onStep(null); };
@@ -95,6 +101,7 @@ export function BridgeSheet({ step, onStep, domains = [], onSent }: {
     const s = await askCounselor(level);
     setBusy(false);
     if (!s) { setFailed(true); return; }
+    track("bridge_counselor");
     setSent(s);
     onSent?.(s);
   }
@@ -215,6 +222,10 @@ export function HelpCards({ domains, onBridge, limit = 2, onHide }: {
   onHide?: (id: DomainId) => void;
 }) {
   const top = shown(domains, limit);
+  const ids = top.map((d) => d.id).join(",");
+  useEffect(() => {
+    for (const id of ids ? (ids.split(",") as DomainId[]) : []) trackOnce("card_shown", id);
+  }, [ids]);
   if (top.length === 0) return null;
   return (
     <div className="space-y-2.5">
@@ -240,12 +251,12 @@ export function HelpCards({ domains, onBridge, limit = 2, onHide }: {
                   <p className="mt-0.5 text-[0.76rem] leading-relaxed text-ink-3">{r.when}</p>
                 </div>
                 {r.kind === "hotline" ? (
-                  <a href={`tel:${r.number}`}
+                  <a href={`tel:${r.number}`} onClick={() => track("card_click", d.id)}
                     className="inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-full bg-accent-soft px-3.5 text-[0.9rem] font-semibold tabular-nums text-accent transition hover:bg-[#DDE9FD]">
                     <Phone size={14} /> {r.number}
                   </a>
                 ) : (
-                  <Button variant="soft" size="sm" onClick={onBridge} className="shrink-0"><Bridge size={15} /> พาไปหาคน</Button>
+                  <Button variant="soft" size="sm" onClick={() => { track("card_click", d.id); onBridge(); }} className="shrink-0"><Bridge size={15} /> พาไปหาคน</Button>
                 )}
               </li>
             ))}
@@ -263,6 +274,7 @@ export function HelpCards({ domains, onBridge, limit = 2, onHide }: {
  * crisis = 8Q ตั้งแต่ระดับปานกลาง → เส้นทางฉุกเฉิน
  */
 export function SafetyCard({ crisis, onBridge }: { crisis: boolean; onBridge: () => void }) {
+  useEffect(() => { trackOnce("safety_shown"); }, []);
   return (
     <Card as="section" className={`rise p-4 ${crisis ? "border-care/40 bg-care-soft" : ""}`}>
       <p className="text-[0.92rem] leading-relaxed text-ink">
@@ -298,6 +310,7 @@ export function Nudge({ kind, onPick, onDismiss }: {
   onPick: (s: BridgeStep) => void;
   onDismiss: () => void;
 }) {
+  useEffect(() => { track("nudge_shown"); }, [kind]);
   return (
     <Card as="section" className="rise border-accent/25 bg-accent-soft p-4">
       <div className="flex gap-3">

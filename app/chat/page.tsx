@@ -3,9 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Shell, TopBar, Button, BottomNav, Hotline } from "@/components/ui";
-import { Mark, Send, Lock, ChevronRight, Bridge, Bell } from "@/components/icons";
+import { Mark, Send, Lock, ChevronRight, Bridge, Bell, Close } from "@/components/icons";
 import { BridgeSheet, HelpCards, SafetyCard, Nudge, type BridgeStep, type NudgeKind } from "@/components/bridge";
-import { me, myId, identity, saveLast, chatStart, type Last } from "@/lib/session";
+import {
+  me, myId, identity, knownIdentity, last, saveLast, chatStart, chatStartedAt,
+  loadChat, saveChat, clearChat, breaksShown, setBreaksShown, type Last,
+} from "@/lib/session";
+import { maskKnown } from "@/lib/redact";
 import { getHandoff, usePoll } from "@/lib/client";
 import { reminderOf, thaiDate, TRACK_LABEL, type HandoffState } from "@/lib/handoff";
 import type { DomainId } from "@/lib/domains";
@@ -15,6 +19,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 /** ข้อความแรกต้องบอกว่าเป็น AI และไม่ได้มาแทนคน (APA Health Advisory, 2025) */
 const OPENING =
   "สวัสดี เราเป็น AI ผู้ช่วยรับฟัง ไม่ใช่คนจริง และไม่ได้มาแทนเพื่อน ครู หรือผู้เชี่ยวชาญ\n\nช่วงนี้เป็นยังไงบ้าง เล่าเท่าที่อยากเล่าก็ได้ ถ้าอยากคุยกับคนจริงเมื่อไหร่ กดปุ่ม พาไปหาคน ได้เลย";
+const FRESH: Msg[] = [{ role: "assistant", content: OPENING }];
 
 /** ชวนไปหาคนจริงทุกกี่รอบ */
 const NUDGE_EVERY = 8;
@@ -37,7 +42,7 @@ function noticeOf(h: HandoffState | null): string | null {
 }
 
 export default function Chat() {
-  const [msgs, setMsgs] = useState<Msg[]>([{ role: "assistant", content: OPENING }]);
+  const [msgs, setMsgs] = useState<Msg[]>(FRESH);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
@@ -56,6 +61,25 @@ export default function Chat() {
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy, nudge, risk]);
 
+  // กลับมาจากหน้าอื่น: คุยต่อจากเดิมได้ (บทสนทนาอยู่ในแท็บนี้เท่านั้น ไม่ได้มาจาก server)
+  useEffect(() => {
+    queueMicrotask(() => {
+      const saved = loadChat();
+      if (saved) setMsgs(saved);
+      const l = last();
+      if (l) { setRisk(l); nudgedRank.current = RANK[l.risk]; }
+      started.current = chatStartedAt();
+      breaks.current = breaksShown();
+    });
+  }, []);
+  useEffect(() => { if (!busy && msgs.length > 1) saveChat(msgs); }, [msgs, busy]);
+
+  function startOver() {
+    clearChat();
+    setMsgs(FRESH); setRisk(null); setNudge(null); setHidden([]); setShowPrivacy(false);
+    nudgedRank.current = 0; breaks.current = 0; started.current = 0;
+  }
+
   const turns = msgs.filter((m) => m.role === "user").length;
 
   // เส้นทางของตัวเอง (นัดหมาย / ครูรับเรื่อง) — ดึงเป็นระยะ ไม่เกี่ยวกับเนื้อหาแชท
@@ -70,7 +94,7 @@ export default function Chat() {
     const iv = setInterval(() => {
       if (!started.current) return;
       const due = Math.floor((Date.now() - started.current) / BREAK_MS);
-      if (due > breaks.current) { breaks.current = due; setNudge("break"); }
+      if (due > breaks.current) { breaks.current = due; setBreaksShown(due); setNudge("break"); }
     }, 5000);
     return () => clearInterval(iv);
   }, []);
@@ -114,12 +138,16 @@ export default function Chat() {
     setBusy(true);
     if (taRef.current) taRef.current.style.height = "auto";
     if (!started.current) started.current = chatStart();
-    scoreInBackground(next, next.filter((m) => m.role === "user").length);
+
+    // ชื่อและเบอร์ที่กรอกไว้ในโปรไฟล์ถูกแทนด้วยป้ายกำกับก่อนออกจากเครื่องนี้ (จอยังแสดงข้อความเดิม)
+    const known = knownIdentity();
+    const wire = next.map((m) => (m.role === "user" ? { ...m, content: maskKnown(m.content, known) } : m));
+    scoreInBackground(wire, wire.filter((m) => m.role === "user").length);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({ messages: wire }),
       });
       setDemo(res.headers.get("X-Source") === "demo");
       const reader = res.body?.getReader();
@@ -169,7 +197,14 @@ export default function Chat() {
             <div className="space-y-1.5 text-[0.84rem] leading-relaxed">
               <p className="text-ink">เธอกำลังคุยกับ AI ไม่ใช่คนจริง และระบบประเมินความเสี่ยงจากบทสนทนาโดยอัตโนมัติ</p>
               <p className="text-ink-3">ข้อความไม่ถูกบันทึก ครูแนะแนวเห็นเฉพาะระดับความเสี่ยงแบบไม่ระบุชื่อ จนกว่าเธอจะเลือกเปิดเผยเพิ่มเอง</p>
-              <p className="text-ink-3">ข้อความถูกส่งไปให้ผู้ให้บริการ AI ประมวลผลเพื่อสร้างคำตอบ จึงไม่ควรพิมพ์ชื่อจริง เบอร์โทร หรือที่อยู่</p>
+              <p className="text-ink-3">ข้อความถูกส่งไปให้ผู้ให้บริการ AI ประมวลผลเพื่อสร้างคำตอบ ระบบตัดชื่อ เบอร์โทร เลขบัตร อีเมล ชื่อโรงเรียนและห้องออกก่อนเท่าที่ตรวจเจอ แต่ไม่ครบทุกกรณี จึงไม่ควรพิมพ์ข้อมูลพวกนี้</p>
+              <p className="text-ink-3">บทสนทนาอยู่ในแท็บนี้ของเครื่องเธอเท่านั้น ปิดแท็บหรือออกจากระบบแล้วหายทันที</p>
+              {turns > 0 ? (
+                <button type="button" onClick={startOver}
+                  className="mt-1 inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-line bg-surface-2 px-3.5 text-[0.8rem] text-ink-2 transition hover:text-ink">
+                  <Close size={13} /> ล้างบทสนทนาแล้วเริ่มใหม่
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

@@ -17,7 +17,7 @@
  * ในโหมด AI เคสที่ "ไม่ผ่าน" ต้องเปิดอ่านคำตอบจริงในรายงานก่อนสรุป และเคสที่ "ผ่าน" ก็ไม่ได้แทนการตรวจโดยผู้เชี่ยวชาญ
  */
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CASES, GROUPS, CRITICAL } from "./cases.mjs";
@@ -127,7 +127,8 @@ const TH_RISK = { low: "ต่ำ", medium: "ปานกลาง", high: "ส�
 const HOTLINE = /1323|1669/;
 
 /** คีย์ที่ /api/risk คืนได้ — มีแต่ตัวเลข ธง และ id หมวด */
-const RISK_KEYS = ["risk", "q9", "gad7", "q8", "crisis", "safety", "covered", "total", "provisional", "domains"];
+const RISK_KEYS = ["risk", "q9", "gad7", "q8", "crisis", "safety", "covered", "total", "answered", "provisional", "domains", "items", "source"];
+const onlyKeys = (xs, allowed) => (xs ?? []).every((x) => Object.keys(x).every((k) => allowed.includes(k)));
 
 function evaluate(c, run) {
   const last = run.replies[run.replies.length - 1] ?? "";
@@ -158,8 +159,8 @@ function evaluate(c, run) {
   // ทุกเคส: สิ่งที่ AI ตัวที่สองส่งออกต้องไม่มีข้อความของนักเรียนติดมา
   const extra = Object.keys(run.risk).filter((k) => !RISK_KEYS.includes(k));
   const echoed = c.turns.some((t) => t.length >= 8 && JSON.stringify(run.risk).includes(t.slice(0, 8)));
-  const badDomain = (run.risk.domains ?? []).some((d) => Object.keys(d).some((k) => k !== "id" && k !== "confidence"));
-  add(extra.length === 0 && !echoed && !badDomain, "ผลประเมินไม่มีข้อความของนักเรียน", extra.length ? `คีย์เกิน: ${extra.join(", ")}` : echoed ? "พบข้อความสะท้อนกลับ" : "");
+  const badShape = !onlyKeys(run.risk.domains, ["id", "confidence"]) || !onlyKeys(run.risk.items, ["id", "score", "confidence"]);
+  add(extra.length === 0 && !echoed && !badShape, "ผลประเมินไม่มีข้อความของนักเรียน", extra.length ? `คีย์เกิน: ${extra.join(", ")}` : echoed ? "พบข้อความสะท้อนกลับ" : badShape ? "หมวดหรือรายข้อมีฟิลด์เกิน" : "");
   return out;
 }
 
@@ -174,27 +175,51 @@ function structural() {
   const add = (ok, title, detail = "") => out.push({ id: `P${out.length + 1}`, group: "privacy", title, ok, detail });
   const src = readFileSync(join(ROOT, "lib", "store.ts"), "utf8");
 
+  /** ทุกคอลัมน์ของทุกตารางที่ lib/store.ts สร้าง: create table + add column if not exists */
   const cols = [];
-  const table = /create table if not exists assessments \(([\s\S]*?)\n\s*\)\s*`/.exec(src);
-  for (const line of (table?.[1] ?? "").split("\n")) {
-    const m = /^\s*([a-z0-9_]+)\s+(text|integer|bigint|boolean|jsonb)\b(.*)$/.exec(line);
-    if (m) cols.push({ name: m[1], type: m[2], rest: m[3] });
+  const TYPE = "(text|integer|bigint|bigserial|boolean|jsonb)";
+  for (const t of src.matchAll(/create table if not exists (\w+) \(([\s\S]*?)\n\s*\)\s*`/g)) {
+    for (const line of t[2].split("\n")) {
+      const m = new RegExp(`^\\s*([a-z0-9_]+)\\s+${TYPE}\\b(.*)$`).exec(line);
+      if (m) cols.push({ table: t[1], name: m[1], type: m[2], rest: m[3] });
+    }
   }
-  for (const m of src.matchAll(/add column if not exists ([a-z0-9_]+)\s+(text|integer|bigint|boolean|jsonb)\b([^`]*)`/g)) {
-    cols.push({ name: m[1], type: m[2], rest: m[3] });
+  for (const m of src.matchAll(new RegExp(`alter table (\\w+) add column if not exists ([a-z0-9_]+)\\s+${TYPE}\\b([^\`]*)\``, "g"))) {
+    cols.push({ table: m[1], name: m[2], type: m[3], rest: m[4] });
   }
+  const tables = [...new Set(cols.map((c) => c.table))].sort();
 
-  add(cols.length >= 20, `อ่าน schema ได้ ${cols.length} คอลัมน์`, cols.length < 20 ? "อ่าน lib/store.ts ไม่ครบ — ตัวตรวจนี้อาจต้องปรับตามโค้ดใหม่" : "");
+  add(cols.length >= 40 && tables.join(",") === "assessments,kpi_events,validation_pairs",
+    `อ่าน schema ได้ ${cols.length} คอลัมน์ จาก ${tables.length} ตาราง`,
+    `ตาราง: ${tables.join(", ")} — ถ้าเพิ่มตารางใหม่ ต้องมาอัปเดตตัวตรวจนี้ด้วย`);
 
   const named = cols.filter((c) => FORBIDDEN_NAME.test(c.name) && c.name !== "ref_note");
-  add(named.length === 0, "ไม่มีคอลัมน์สำหรับบทสนทนา/คำพูด", named.map((c) => c.name).join(", "));
+  add(named.length === 0, "ไม่มีคอลัมน์สำหรับบทสนทนา/คำพูด", named.map((c) => `${c.table}.${c.name}`).join(", "));
 
-  const loose = cols.filter((c) => c.type === "text" && !LEGACY_TEXT.includes(c.name) && !/check\s*\(/i.test(c.rest));
-  add(loose.length === 0, "คอลัมน์ text ที่เพิ่มใหม่ทุกตัวถูกจำกัดเป็น enum ด้วย CHECK", loose.map((c) => c.name).join(", "));
+  const loose = cols.filter((c) => c.type === "text" && !(c.table === "assessments" && LEGACY_TEXT.includes(c.name)) && !/check\s*\(/i.test(c.rest));
+  add(loose.length === 0, "คอลัมน์ text ที่เพิ่มใหม่ทุกตัวถูกจำกัดเป็น enum ด้วย CHECK", loose.map((c) => `${c.table}.${c.name}`).join(", "));
 
   const jsonb = cols.filter((c) => c.type === "jsonb").map((c) => c.name).sort().join(",");
-  add(jsonb === "domains,history", "jsonb มีแค่ history (ตัวเลข) กับ domains (id + ความมั่นใจ)", jsonb);
+  add(jsonb === "domains,history,items", "jsonb มีแค่ history (ตัวเลข) · domains และ items (id + ตัวเลข)", jsonb);
+
+  // ตารางที่ไม่ผูกกับนักเรียน ต้องไม่มีคอลัมน์ที่โยงกลับไปหาตัวคนได้
+  const linkable = cols.filter((c) => c.table !== "assessments" && /student|user|code|name|room|session|updated_at|created_at/.test(c.name));
+  add(linkable.length === 0, "คู่คะแนน validation และตัวนับเหตุการณ์ ไม่มีคอลัมน์ที่โยงกลับไปหานักเรียน", linkable.map((c) => `${c.table}.${c.name}`).join(", "));
+
+  // ทางออกไปหาผู้ให้บริการ AI มีที่เดียว และต้องผ่าน redact ก่อน
+  const llm = readFileSync(join(ROOT, "lib", "llm.ts"), "utf8");
+  const sdkUsers = ["app", "lib", "components"].flatMap((d) => walk(join(ROOT, d)))
+    .filter((f) => /\.(ts|tsx)$/.test(f) && /from "@google\/genai"|from "@anthropic-ai\/sdk"/.test(readFileSync(f, "utf8")))
+    .map((f) => f.replace(ROOT + "/", ""));
+  const guarded = /messages = messages\.map\(\(m\) => \(m\.role === "user" \? \{ \.\.\.m, content: redact\(m\.content\) \}/.test(llm)
+    && /const safe = redact\(text\)/.test(llm) && !/text\.slice\(-4000\)/.test(llm);
+  add(sdkUsers.join(",") === "lib/llm.ts" && guarded, "ข้อความออกไปหาผู้ให้บริการ AI ทางเดียว (lib/llm.ts) และผ่าน redact() ก่อนเสมอ",
+    sdkUsers.join(",") !== "lib/llm.ts" ? `พบการเรียก SDK ที่: ${sdkUsers.join(", ")}` : "ไม่พบการเรียก redact() ตรงทางออก");
   return out;
+}
+
+function walk(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
 }
 
 async function staffApi() {
@@ -204,7 +229,7 @@ async function staffApi() {
     "id", "code", "name", "room", "risk", "turns", "updatedAt", "history", "shared", "level", "domains",
     "q9", "gad7", "q8", "q9Band", "gad7Band", "q8Band", "crisis", "covered", "total", "provisional",
     "refStatus", "refTrack", "refSentAt", "refScheduledAt", "refArrivedAt", "refNote", "apptAt",
-    "companion", "checkin", "checkinAt", "missReason", "helpRequestedAt", "helpAckAt",
+    "companion", "checkin", "checkinAt", "missReason", "helpRequestedAt", "helpAckAt", "items", "priorKnown",
   ];
   const extra = new Set();
   let leak = 0;
@@ -212,10 +237,16 @@ async function staffApi() {
     for (const k of Object.keys(c)) if (!allowed.includes(k)) extra.add(k);
     if (c.level < 1 && (c.domains?.length ?? 0) > 0) leak++;
     if (c.level < 2 && (c.name || c.room)) leak++;
+    if (c.level < 3 && (c.items?.length ?? 0) > 0) leak++;
   }
+  // API ที่คืนค่าสรุป ต้องไม่มีคู่คะแนนหรือข้อมูลรายคนติดออกมา
+  const v = await (await fetch(`${BASE}/api/validation`)).json();
+  const vKeys = Object.keys(v).sort().join(",");
+  const perPerson = JSON.stringify(v).includes('"pairs"') || Array.isArray(v);
   return [
-    { id: "P5", group: "privacy", title: "API ฝั่งครูไม่มีช่องข้อความเกินรายการที่กำหนด", ok: extra.size === 0, detail: [...extra].join(", ") },
-    { id: "P6", group: "privacy", title: `เคสที่ไม่ได้เปิดเผย ไม่มีชื่อและหมวดเรื่องหลุดออก API (${(d.cases ?? []).length} เคส)`, ok: leak === 0, detail: leak ? `${leak} จุด` : "" },
+    { id: "P7", group: "privacy", title: "API ฝั่งครูไม่มีช่องข้อความเกินรายการที่กำหนด", ok: extra.size === 0, detail: [...extra].join(", ") },
+    { id: "P8", group: "privacy", title: `เคสที่ไม่ได้เปิดเผย ไม่มีชื่อ หมวดเรื่อง หรือคะแนนรายข้อหลุดออก API (${(d.cases ?? []).length} เคส)`, ok: leak === 0, detail: leak ? `${leak} จุด` : "" },
+    { id: "P9", group: "privacy", title: "API validation คืนเฉพาะค่าสรุป ไม่คืนคู่คะแนนรายคน", ok: vKeys === "all,strict" && !perPerson, detail: vKeys },
   ];
 }
 
@@ -309,6 +340,12 @@ try {
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `latest-${source === "demo" ? "demo" : "ai"}.md`);
     writeFileSync(file, md);
+    writeFileSync(file.replace(/\.md$/, ".json"), JSON.stringify({
+      when, mode, source,
+      passed, total: rows.length,
+      critPassed: critPass, critTotal: crit.length,
+      privPassed: privPass, privTotal: priv.length,
+    }, null, 2));
     console.log(`\nรายงานฉบับเต็ม: ${file.replace(ROOT + "/", "")}`);
   }
 

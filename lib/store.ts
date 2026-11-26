@@ -1,6 +1,8 @@
 import { neon } from "@neondatabase/serverless";
 import { Q9, GAD7, Q8, INSTRUMENTS, type Instrument, type Zone } from "./instruments";
 import { cleanDomains, shown, type DomainHit } from "./domains";
+import { weekOf, type Pair } from "./agreement";
+import type { EventKind, EventDomain, EventCount } from "./events";
 import {
   REF_FLOW, defaultTrack,
   type Level, type RefStatus, type RefTrack, type Companion, type Checkin, type MissReason, type HandoffState,
@@ -19,6 +21,11 @@ import {
  *
  * คอลัมน์ที่เพิ่มสำหรับหมวดปัจจัยเสี่ยงและ warm handoff เป็นตัวเลข เวลา หรือ enum ที่มี CHECK กำกับ
  * (ตรวจด้วย `npm run redteam` — ชุดทดสอบจะล้มถ้ามีคอลัมน์ข้อความอิสระโผล่มาใหม่)
+ *
+ * มีสามตาราง
+ *   assessments       หนึ่งแถวต่อนักเรียน — คะแนน สถานะ และเส้นทางส่งต่อ
+ *   validation_pairs  คู่คะแนน AI กับที่นักเรียนตอบเอง — ไม่มีรหัสนักเรียน โยงกลับไปหาใครไม่ได้
+ *   kpi_events        ตัวนับเหตุการณ์ — ชนิด + หมวด → จำนวนครั้ง ไม่มีรหัสนักเรียน
  */
 
 export type Risk = "low" | "medium" | "high";
@@ -46,6 +53,29 @@ export type Assessment = {
   provisional: boolean;
 };
 
+/** คะแนนรายข้อที่ AI ตัวที่สองสกัดได้ — id ข้อ + คะแนน + ความมั่นใจ ไม่มีคำพูด */
+export type ItemHit = { id: string; score: number; confidence: number };
+
+const ITEM_MAX = new Map(INSTRUMENTS.flatMap((i) => i.items).map((i) => [i.id, i.max]));
+
+/** รับอะไรก็ได้ แล้วคืนเฉพาะข้อที่มีจริง คะแนนไม่เกินเพดาน และตัวเลขล้วน */
+export function cleanItems(raw: unknown): ItemHit[] {
+  if (!Array.isArray(raw)) return [];
+  const out = new Map<string, ItemHit>();
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const { id, score, confidence } = r as { id?: unknown; score?: unknown; confidence?: unknown };
+    if (typeof id !== "string" || !ITEM_MAX.has(id)) continue;
+    if (typeof score !== "number" || typeof confidence !== "number" || Number.isNaN(score) || Number.isNaN(confidence)) continue;
+    out.set(id, {
+      id,
+      score: Math.max(0, Math.min(Math.round(score), ITEM_MAX.get(id)!)),
+      confidence: Math.round(Math.max(0, Math.min(confidence, 1)) * 100) / 100,
+    });
+  }
+  return [...out.values()];
+}
+
 export type Snap = Assessment & {
   id: string;
   code: string;
@@ -61,6 +91,10 @@ export type Snap = Assessment & {
   level: Level;
   /** หมวดปัจจัยเสี่ยง เก็บแค่ id + ความมั่นใจ และเก็บเฉพาะเมื่อ level >= 1 */
   domains: DomainHit[];
+  /** คะแนนรายข้อสำหรับเอกสารส่งต่อ เก็บเฉพาะเมื่อนักเรียนยินยอมส่งต่อ (level 3) */
+  items: ItemHit[];
+  /** ครูรู้จักเคสนี้มาก่อนที่ระบบจะเจอหรือไม่ — ใช้นับ "คัดกรองเจอเร็ว" (ยังไม่ระบุ = undefined) */
+  priorKnown?: boolean;
   refStatus: RefStatus;
   refTrack?: RefTrack;
   refSentAt?: number;
@@ -95,7 +129,11 @@ function url() {
 export const storageMode = () => (url() ? "neon" : "memory");
 
 type SQL = ReturnType<typeof neon>;
-const g = globalThis as unknown as { __sql?: SQL; __ready?: Promise<void>; __mem?: Map<string, Snap> };
+type StoredPair = Pair & { week: number };
+const g = globalThis as unknown as {
+  __sql?: SQL; __ready?: Promise<void>; __mem?: Map<string, Snap>;
+  __pairs?: StoredPair[]; __events?: Map<string, number>;
+};
 
 function db(): SQL | null {
   const u = url();
@@ -160,6 +198,8 @@ async function ready(sql: SQL) {
       await sql`alter table assessments add column if not exists miss_reason text check (miss_reason in ('fear', 'time', 'transport', 'guardian', 'cost', 'other'))`;
       await sql`alter table assessments add column if not exists help_requested_at bigint`;
       await sql`alter table assessments add column if not exists help_ack_at bigint`;
+      await sql`alter table assessments add column if not exists items jsonb not null default '[]'::jsonb`;
+      await sql`alter table assessments add column if not exists prior_known boolean`;
       // แถวเดิมที่เคยเปิดชื่อไว้ = L2 · เคยส่งต่อไว้ = เส้นทางภายนอก (ทำครั้งเดียวตอนเพิ่มคอลัมน์)
       if (fresh.length === 0) {
         await sql`update assessments set level = 2 where shared = true`;
@@ -167,6 +207,28 @@ async function ready(sql: SQL) {
       }
 
       await sql`create index if not exists assessments_risk_idx on assessments (risk, q9 desc)`;
+
+      // คู่คะแนนสำหรับ validation — ไม่มีคอลัมน์ที่โยงกลับไปหานักเรียน และเวลาเก็บแค่ระดับสัปดาห์
+      await sql`
+        create table if not exists validation_pairs (
+          id          bigserial primary key,
+          ai_q9       integer not null check (ai_q9 between 0 and 27),
+          self_q9     integer not null check (self_q9 between 0 and 27),
+          ai_answered integer not null check (ai_answered between 0 and 9),
+          blind       boolean not null,
+          source      text not null check (source in ('demo', 'gemini', 'claude')),
+          week        bigint not null
+        )
+      `;
+      // ตัวนับเหตุการณ์ — ค่าใน check ต้องตรงกับ EVENT_KINDS / EVENT_DOMAINS ใน lib/events.ts (มี unit test เทียบให้)
+      await sql`
+        create table if not exists kpi_events (
+          kind        text not null check (kind in ('card_shown', 'card_click', 'bridge_open', 'bridge_friend', 'bridge_counselor', 'bridge_hotline', 'nudge_shown', 'safety_shown', 'care_open')),
+          domain      text not null check (domain in ('academic_pressure', 'bullying', 'online_threat', 'vaping_alcohol', 'gambling', 'family_violence', 'sleep', 'relationship', 'none')),
+          n           integer not null default 0,
+          primary key (kind, domain)
+        )
+      `;
     })().catch((e) => {
       // อย่าให้ promise ที่ reject ค้างอยู่ ไม่งั้นทุก request ถัดไปพังตามโดยไม่ลองใหม่
       g.__ready = undefined;
@@ -204,6 +266,7 @@ function seed(
     updatedAt: Date.now() - minutesAgo * 6e4,
     history,
     domains: [],
+    items: [],
     refStatus: "none",
     ...extra,
     level,
@@ -308,6 +371,8 @@ type Row = {
   miss_reason: string | null;
   help_requested_at: N;
   help_ack_at: N;
+  items: unknown;
+  prior_known: boolean | null;
 };
 
 const num = (v: N) => (v == null ? undefined : Number(v));
@@ -338,6 +403,8 @@ const toSnap = (r: Row): Snap => ({
   missReason: (r.miss_reason ?? undefined) as MissReason | undefined,
   helpRequestedAt: num(r.help_requested_at),
   helpAckAt: num(r.help_ack_at),
+  items: cleanItems(json(r.items)),
+  priorKnown: r.prior_known ?? undefined,
 });
 
 async function write(sql: SQL, s: Snap) {
@@ -348,7 +415,8 @@ async function write(sql: SQL, s: Snap) {
       provisional, turns, history, updated_at,
       ref_status, ref_sent_at, ref_scheduled_at, ref_arrived_at, ref_note,
       level, domains, ref_track, appt_at, companion,
-      checkin, checkin_at, miss_reason, help_requested_at, help_ack_at
+      checkin, checkin_at, miss_reason, help_requested_at, help_ack_at,
+      items, prior_known
     ) values (
       ${s.id}, ${s.code}, ${s.name ?? null}, ${s.room ?? null}, ${s.shared}, ${s.risk},
       ${s.q9}, ${s.gad7}, ${s.q8}, ${s.q9Band}, ${s.gad7Band}, ${s.q8Band},
@@ -359,7 +427,8 @@ async function write(sql: SQL, s: Snap) {
       ${s.level}, ${JSON.stringify(cleanDomains(s.domains))}::jsonb, ${s.refTrack ?? null},
       ${s.apptAt ?? null}, ${s.companion ?? null},
       ${s.checkin ?? null}, ${s.checkinAt ?? null}, ${s.missReason ?? null},
-      ${s.helpRequestedAt ?? null}, ${s.helpAckAt ?? null}
+      ${s.helpRequestedAt ?? null}, ${s.helpAckAt ?? null},
+      ${JSON.stringify(cleanItems(s.items))}::jsonb, ${s.priorKnown ?? null}
     )
     on conflict (id) do update set
       code = excluded.code, name = excluded.name, room = excluded.room,
@@ -375,7 +444,8 @@ async function write(sql: SQL, s: Snap) {
       level = excluded.level, domains = excluded.domains, ref_track = excluded.ref_track,
       appt_at = excluded.appt_at, companion = excluded.companion,
       checkin = excluded.checkin, checkin_at = excluded.checkin_at, miss_reason = excluded.miss_reason,
-      help_requested_at = excluded.help_requested_at, help_ack_at = excluded.help_ack_at
+      help_requested_at = excluded.help_requested_at, help_ack_at = excluded.help_ack_at,
+      items = excluded.items, prior_known = excluded.prior_known
   `;
 }
 
@@ -430,20 +500,21 @@ const blank = (id: string): Snap => ({
   q9Band: bandOf(Q9, 0), gad7Band: bandOf(GAD7, 0), q8Band: bandOf(Q8, 0),
   crisis: false, covered: 0, total: TOTAL_ITEMS, provisional: true,
   risk: "low", turns: 0, updatedAt: Date.now(), history: [],
-  shared: false, level: 0, domains: [], refStatus: "none",
+  shared: false, level: 0, domains: [], items: [], refStatus: "none",
 });
 
 /** ชื่อกับห้องเป็นข้อมูลระบุตัวตน ไม่ใช่ช่องเขียนข้อความ — ตัดให้สั้นและเป็นบรรทัดเดียว */
 const label = (v: unknown) =>
   typeof v === "string" && v.trim() ? v.replace(/\s+/g, " ").trim().slice(0, 60) : undefined;
 
-export type Disclosure = { name?: string; room?: string; domains?: DomainHit[] };
+export type Disclosure = { name?: string; room?: string; domains?: DomainHit[]; items?: ItemHit[] };
 
 /**
  * จุดเดียวที่ตัดสินว่าอะไรถูกเก็บได้ตามระดับที่นักเรียนเลือก
  *   L0  ไม่เก็บหมวดเรื่อง ไม่เก็บชื่อ
  *   L1+ เก็บหมวดเรื่อง (id + ความมั่นใจ)
  *   L2+ เก็บชื่อและห้อง
+ *   L3  เก็บคะแนนรายข้อสำหรับเอกสารส่งต่อ (id ข้อ + คะแนน + ความมั่นใจ)
  * ลดระดับเมื่อไหร่ ข้อมูลของระดับที่สูงกว่าถูกลบออกจากที่เก็บทันที ไม่ใช่แค่ซ่อน
  */
 function disclose(s: Snap, level: Level, d: Disclosure = {}): Snap {
@@ -454,13 +525,14 @@ function disclose(s: Snap, level: Level, d: Disclosure = {}): Snap {
     name: level >= 2 ? label(d.name) ?? s.name : undefined,
     room: level >= 2 ? label(d.room) ?? s.room : undefined,
     domains: level >= 1 ? (d.domains ? cleanDomains(d.domains) : s.domains) : [],
+    items: level >= 3 ? (d.items ? cleanItems(d.items) : s.items) : [],
   };
 }
 
 export async function upsert(
   id: string,
   a: Assessment,
-  meta: { risk: Risk; turns: number; level?: Level; name?: string; room?: string; domains?: DomainHit[] }
+  meta: { risk: Risk; turns: number; level?: Level; name?: string; room?: string; domains?: DomainHit[]; items?: ItemHit[] }
 ): Promise<Snap> {
   const prev = (await load(id)) ?? blank(id);
 
@@ -475,7 +547,7 @@ export async function upsert(
       history: [...prev.history, a.q9].slice(-8),
     },
     meta.level ?? prev.level,
-    { name: meta.name, room: meta.room, domains: meta.domains ?? [] }
+    { name: meta.name, room: meta.room, domains: meta.domains ?? [], items: meta.items ?? [] }
   );
 
   return save(next);
@@ -578,6 +650,94 @@ export async function escalate(id: string): Promise<Snap | null> {
   });
 }
 
+/** ครูระบุว่ารู้จักเคสนี้มาก่อนหรือไม่ — ใช้นับตัวชี้วัด "คัดกรองเจอเร็ว" */
+export async function setPriorKnown(id: string, known: boolean): Promise<Snap | null> {
+  const cur = await load(id);
+  if (!cur) return null;
+  return save({ ...cur, priorKnown: known });
+}
+
+export async function getOne(id: string): Promise<Snap | null> {
+  return (await load(id)) ?? null;
+}
+
+/* ---------------- validation: คู่คะแนน AI กับที่นักเรียนตอบเอง ------------- */
+
+/** ไม่รับ id นักเรียนเข้ามาเลย — ฟังก์ชันนี้จึงโยงคู่คะแนนกับใครไม่ได้ตั้งแต่ลายเซ็น */
+export async function addPair(p: Pair): Promise<void> {
+  const week = weekOf(Date.now());
+  const sql = db();
+  if (!sql) {
+    (g.__pairs ??= []).push({ ...p, week });
+    return;
+  }
+  await ready(sql);
+  await sql`
+    insert into validation_pairs (ai_q9, self_q9, ai_answered, blind, source, week)
+    values (${p.ai}, ${p.self}, ${p.answered}, ${p.blind}, ${p.source}, ${week})
+  `;
+}
+
+export async function allPairs(): Promise<Pair[]> {
+  const sql = db();
+  if (!sql) return (g.__pairs ?? []).map(({ ai, self, answered, blind, source }) => ({ ai, self, answered, blind, source }));
+  await ready(sql);
+  const rows = (await sql`select ai_q9, self_q9, ai_answered, blind, source from validation_pairs`) as {
+    ai_q9: number; self_q9: number; ai_answered: number; blind: boolean; source: Pair["source"];
+  }[];
+  return rows.map((r) => ({ ai: r.ai_q9, self: r.self_q9, answered: r.ai_answered, blind: r.blind, source: r.source }));
+}
+
+/* ---------------- ตัวนับเหตุการณ์แบบไม่ระบุตัวตน --------------------------- */
+
+export async function bump(kind: EventKind, domain: EventDomain): Promise<void> {
+  const sql = db();
+  if (!sql) {
+    const m = (g.__events ??= new Map());
+    const key = `${kind}:${domain}`;
+    m.set(key, (m.get(key) ?? 0) + 1);
+    return;
+  }
+  await ready(sql);
+  await sql`
+    insert into kpi_events (kind, domain, n) values (${kind}, ${domain}, 1)
+    on conflict (kind, domain) do update set n = kpi_events.n + 1
+  `;
+}
+
+export async function allEvents(): Promise<EventCount[]> {
+  const sql = db();
+  if (!sql) {
+    return [...(g.__events ?? new Map<string, number>())].map(([key, n]) => {
+      const [kind, domain] = key.split(":") as [EventKind, EventDomain];
+      return { kind, domain, n };
+    });
+  }
+  await ready(sql);
+  return (await sql`select kind, domain, n from kpi_events`) as EventCount[];
+}
+
+/* ---------------- หลักฐานจาก schema: ระบบเก็บอะไรบ้าง ---------------------- */
+
+export type SchemaColumn = { table: string; column: string; type: string };
+
+/**
+ * รายการคอลัมน์ทั้งหมดที่ระบบมี — ใช้แสดงในหน้าตัวชี้วัดว่า "ไม่มีที่ให้ข้อความไปลง"
+ * บน Postgres อ่านจาก information_schema ของฐานข้อมูลจริง (ไม่ใช่รายการที่เขียนไว้ในโค้ด)
+ * โหมด memory ไม่มีตาราง จึงคืนรายการว่างและหน้าจอบอกว่าต้องต่อฐานข้อมูลก่อน
+ */
+export async function schemaColumns(): Promise<SchemaColumn[]> {
+  const sql = db();
+  if (!sql) return [];
+  await ready(sql);
+  return (await sql`
+    select table_name as "table", column_name as "column", data_type as "type"
+    from information_schema.columns
+    where table_name in ('assessments', 'validation_pairs', 'kpi_events')
+    order by table_name, ordinal_position
+  `) as SchemaColumn[];
+}
+
 /* ---------------- สิ่งที่ออกจาก API ---------------------------------------- */
 
 /**
@@ -590,6 +750,7 @@ export function forStaff(s: Snap): Snap {
     name: s.level >= 2 ? s.name : undefined,
     room: s.level >= 2 ? s.room : undefined,
     domains: s.level >= 1 ? shown(s.domains) : [],
+    items: s.level >= 3 ? s.items : [],
   };
 }
 

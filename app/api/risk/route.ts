@@ -1,4 +1,4 @@
-import { extractItems, type Extracted } from "@/lib/llm";
+import { extractItems, provider, type Extracted } from "@/lib/llm";
 import { upsert, ZONE_TO_RISK, type Assessment } from "@/lib/store";
 import {
   Q9, GAD7, Q8, INSTRUMENTS, CONFIDENCE_FLOOR, scoreOf, combine, isCrisis,
@@ -49,6 +49,7 @@ ${DOMAIN_LIST}
 - domains ใส่เฉพาะหมวดที่นักเรียนเล่าถึงเองจริง ๆ ใช้ id จากรายการเท่านั้น ไม่มีก็ส่งรายการว่าง
 - หมวดเป็นแค่การชี้ทางไปหาคนช่วย ไม่ใช่การวินิจฉัย และไม่มีผลกับคะแนน
 - ห้ามส่งข้อความหรือคำพูดของนักเรียนกลับมา ส่งเฉพาะ id คะแนน และความมั่นใจ
+- ป้ายในวงเล็บเหลี่ยม เช่น [ชื่อ] [เบอร์โทร] [โรงเรียน] คือข้อมูลส่วนตัวที่ระบบปิดไว้ ไม่ใช่หลักฐานของข้อใด
 - ตอบเป็น JSON เท่านั้น`;
 
 const SCHEMA = {
@@ -158,6 +159,8 @@ export async function POST(req: Request) {
   const fromAi = await extractItems(joined, SYSTEM, SCHEMA, forceDemo);
   const ex = sanitise(fromAi?.items ?? heuristic(joined));
   const domains = fromAi ? cleanDomains(fromAi.domains) : detectDomains(joined);
+  /** ใครเป็นคนสกัดรอบนี้ — ถ้าเรียกโมเดลไม่สำเร็จแล้วตกมาใช้กฎคำสำคัญ ต้องบอกตามจริงว่าเป็น demo */
+  const source = fromAi ? provider(forceDemo) : "demo";
 
   // ชั้นที่ 3 — คำนวณด้วยโค้ด ไม่ใช่ AI
   const s9 = scoreOf(Q9, ex);
@@ -192,6 +195,10 @@ export async function POST(req: Request) {
     provisional,
   };
   const risk = ZONE_TO_RISK[zone];
+  /** ข้อที่มั่นใจพอจนถูกนับคะแนน — id + คะแนน + ความมั่นใจ ไม่มีคำพูด */
+  const items = [...s9.evidence, ...sG.evidence, ...s8.evidence].map((e) => ({
+    id: e.itemId, score: e.score, confidence: Math.round(e.confidence * 100) / 100,
+  }));
 
   if (!dry) {
     // หมวดเรื่องและชื่อจะถูกเก็บหรือไม่ ขึ้นกับระดับที่นักเรียนเลือก — ตัดสินใน store.disclose()
@@ -202,6 +209,7 @@ export async function POST(req: Request) {
       name: profile?.name,
       room: profile?.room,
       domains,
+      items,
     });
   }
 
@@ -213,8 +221,13 @@ export async function POST(req: Request) {
       crisis: assessment.crisis,
       safety,
       covered, total,
+      /** เก็บหลักฐานได้กี่ข้อของแต่ละแบบประเมิน */
+      answered: { q9: s9.answered, gad7: sG.answered, q8: s8.answered },
       provisional,
       domains: shown(domains),
+      // นักเรียนใช้ดู "คะแนนมาจากข้อไหน" ของตัวเอง — server เก็บรายข้อเฉพาะเมื่อยินยอมส่งต่อ (L3)
+      items,
+      source,
     },
     { headers: UTF8 }
   );

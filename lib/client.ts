@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { me, myId, last, patch, identity } from "./session";
+import { me, myId, last, patch, identity, firstTime } from "./session";
 import type { HandoffState, Level, Companion, MissReason } from "./handoff";
+import type { EventKind, EventDomain } from "./events";
 
 /* ---------------- hooks ---------------------------------------------------- */
 
@@ -22,6 +23,12 @@ const noop = () => () => {};
 /** true หลัง hydrate แล้วเท่านั้น — ใช้ก่อนอ่าน sessionStorage ตอน render */
 export const useHydrated = () => useSyncExternalStore(noop, () => true, () => false);
 
+/** session ปัจจุบัน (null ระหว่าง SSR / ก่อน hydrate) */
+export function useMe() {
+  const ok = useHydrated();
+  return ok ? me() : null;
+}
+
 /** กรอกชื่อไว้ในเครื่องนี้แล้วหรือยัง — เปิดชื่อให้ครู (L2) ได้ก็ต่อเมื่อมีชื่อให้เปิด */
 export function useHasName(): boolean {
   const ok = useHydrated();
@@ -32,7 +39,8 @@ export function useHasName(): boolean {
 
 /**
  * สิ่งที่ส่งไปพร้อมการเลือกระดับ — ส่งเท่าที่ระดับนั้นอนุญาตเท่านั้น
- * ต่ำกว่า L2 ไม่ส่งชื่อ · ต่ำกว่า L1 ไม่ส่งหมวดเรื่อง (server ตัดซ้ำอีกชั้นใน store.disclose)
+ * ต่ำกว่า L2 ไม่ส่งชื่อ · ต่ำกว่า L1 ไม่ส่งหมวดเรื่อง · คะแนนรายข้อส่งเฉพาะ L3
+ * (server ตัดซ้ำอีกชั้นใน store.disclose)
  */
 export function disclosure(level: Level) {
   const u = level >= 2 ? identity() : {};
@@ -41,6 +49,7 @@ export function disclosure(level: Level) {
     name: u.name,
     room: u.room,
     domains: level >= 1 ? last()?.domains ?? undefined : undefined,
+    items: level >= 3 ? last()?.items ?? undefined : undefined,
   };
 }
 
@@ -77,3 +86,20 @@ export const chooseLevel = (level: Level) => post({ action: "level", ...disclosu
 export const askCounselor = (level: Level) => post({ action: "request", ...disclosure(level) });
 export const chooseCompanion = (companion: Companion) => post({ action: "companion", companion });
 export const answerCheckin = (went: boolean, reason?: MissReason) => post({ action: "checkin", went, reason });
+
+/* ---------------- ตัวนับเหตุการณ์แบบไม่ระบุตัวตน --------------------------- */
+
+/** ยิงแล้วลืม — ไม่มีรหัสนักเรียนไปด้วย และถ้าส่งไม่สำเร็จก็ไม่กระทบการใช้งาน */
+export function track(kind: EventKind, domain: EventDomain = "none") {
+  fetch("/api/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind, domain }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+/** สำหรับเหตุการณ์ "ถูกแสดง": นับครั้งเดียวต่อรอบการใช้งาน */
+export function trackOnce(kind: EventKind, domain: EventDomain = "none") {
+  if (firstTime(`${kind}:${domain}`)) track(kind, domain);
+}

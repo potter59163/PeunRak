@@ -5,7 +5,10 @@ import { Shell, TopBar, Button, Card, Hotline, BottomNav } from "@/components/ui
 import { Bridge, Bell, Check, Clock, Users, Calendar } from "@/components/icons";
 import { BridgeSheet, type BridgeStep } from "@/components/bridge";
 import { Timeline, LevelChip } from "@/components/handoff";
-import { getHandoff, chooseLevel, chooseCompanion, answerCheckin, usePoll, useHasName } from "@/lib/client";
+import { NextStep } from "@/components/care";
+import { careStep } from "@/lib/care";
+import { last } from "@/lib/session";
+import { getHandoff, chooseLevel, chooseCompanion, answerCheckin, usePoll, useHasName, useHydrated } from "@/lib/client";
 import {
   LEVELS, COMPANIONS, COMPANION_LABEL, MISS_REASONS, MISS_LABEL, TRACK_LABEL,
   reminderOf, thaiDate, type HandoffState, type Level,
@@ -49,6 +52,10 @@ export default function Journey() {
     setBusy(false);
     return s;
   }
+
+  // ขั้นการดูแลคิดจากผลรอบล่าสุดที่อยู่ในเครื่องนักเรียนเอง (หน้านี้ไม่ได้ขอคะแนนจาก server)
+  const hydrated = useHydrated();
+  const mine = hydrated ? last() : null;
 
   const reminder = h ? reminderOf(h) : null;
   const who = h?.refTrack ? TRACK_LABEL[h.refTrack] : "ครูแนะแนว";
@@ -175,6 +182,8 @@ export default function Journey() {
             ) : null}
           </Card>
         ) : null}
+
+        {mine && !referred ? <NextStep step={careStep(mine)} onBridge={setSheet} /> : null}
 
         {/* ---- คำขอถึงครูแนะแนว ---- */}
         <Card className="p-5">

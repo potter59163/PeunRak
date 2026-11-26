@@ -1,11 +1,16 @@
 import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import { fallbackReply } from "./fallback";
+import { redact } from "./redact";
 
 /**
  * ชั้นกลางสำหรับสลับผู้ให้บริการโมเดล
  * เลือกอัตโนมัติจากคีย์ที่มีอยู่: Gemini → Claude → โหมดสาธิต
  * โค้ดส่วนอื่นของแอปไม่ต้องรู้ว่าใช้เจ้าไหน
+ *
+ * ไฟล์นี้คือ "ประตูออก" บานเดียวของข้อความนักเรียน: ทุกอย่างที่ส่งไปหาผู้ให้บริการภายนอก
+ * ผ่าน redact() ตรงนี้ก่อนเสมอ (ชื่อ เบอร์โทร เลขบัตร อีเมล โรงเรียน/ห้อง → ป้ายกำกับ)
+ * โหมดสาธิตไม่ส่งอะไรออกนอกเครื่อง จึงใช้ข้อความเดิม
  */
 
 export type Msg = { role: "user" | "assistant"; content: string };
@@ -50,6 +55,9 @@ const FAIL = "ระบบขัดข้องชั่วคราว ลอ�
 export async function chatStream(messages: Msg[], system: string, forceDemo = false): Promise<ReadableStream> {
   const p = provider(forceDemo);
   if (p === "demo") return typeOut(fallbackReply(messages));
+
+  // จากบรรทัดนี้ลงไปข้อความจะออกนอกระบบ — ใช้ชุดที่ตัดข้อมูลระบุตัวตนแล้วเท่านั้น
+  messages = messages.map((m) => (m.role === "user" ? { ...m, content: redact(m.content) } : m));
 
   if (p === "gemini") {
     const ai = new GoogleGenAI({
@@ -128,6 +136,9 @@ export async function extractItems(
   const p = provider(forceDemo);
   if (p === "demo") return null;
 
+  // ตัดข้อมูลระบุตัวตนก่อน แล้วค่อยตัดความยาว (กันเลขที่ถูกหั่นครึ่งจนจับรูปแบบไม่ได้)
+  const safe = redact(text).slice(-4000);
+
   const parse = (raw: string): ExtractResult | null => {
     const o = JSON.parse(raw);
     return Array.isArray(o.items) ? { items: o.items, domains: o.domains ?? [] } : null;
@@ -141,7 +152,7 @@ export async function extractItems(
       const r = await ai.interactions.create({
         model: GEMINI_FAST,
         system_instruction: system,
-        input: text.slice(-4000),
+        input: safe,
         response_format: { type: "text", mime_type: "application/json", schema },
       });
       return r.output_text ? parse(r.output_text) : null;
@@ -154,7 +165,7 @@ export async function extractItems(
       max_tokens: 1024,
       system,
       output_config: { format: { type: "json_schema", schema } },
-      messages: [{ role: "user", content: text.slice(-4000) }],
+      messages: [{ role: "user", content: safe }],
     });
     const b = r.content.find((x) => x.type === "text");
     return b && b.type === "text" ? parse(b.text) : null;
