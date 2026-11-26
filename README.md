@@ -34,7 +34,7 @@ cp .env.example .env.local
 
 ต้อง **restart dev server** หลังใส่คีย์ และเปลี่ยนรุ่นได้ด้วย `GEMINI_CHAT_MODEL` / `GEMINI_FAST_MODEL`
 
-> **คีย์ Gemini แบบ free tier ใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น ห้ามใช้กับนักเรียนจริง** —
+> **คีย์ Gemini ทุกแบบใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น ห้ามใช้กับนักเรียนจริง** (free tier นำข้อมูลไปพัฒนาผลิตภัณฑ์ และเงื่อนไขของ Google ห้ามใช้กับบริการที่ผู้อายุต่ำกว่า 18 ปีเข้าถึง) —
 > ดูเหตุผลที่หัวข้อ [ผู้ให้บริการ AI เก็บอะไร](#ผู้ให้บริการ-ai-เก็บอะไร)
 
 โค้ดที่สลับผู้ให้บริการอยู่ที่ [`lib/llm.ts`](lib/llm.ts) ไฟล์เดียว — ส่วนอื่นของแอปไม่รู้ว่าใช้เจ้าไหน
@@ -130,10 +130,12 @@ cp .env.example .env.local
 | ผู้ให้บริการ | สิ่งที่พบ | ผลต่อโครงการ |
 |---|---|---|
 | Gemini API **แบบไม่เสียเงิน** (free tier / AI Studio) | Google นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ และอาจมีคนอ่านเพื่อปรับปรุงคุณภาพ Google เองแนะนำว่าอย่าส่งข้อมูลอ่อนไหวหรือข้อมูลส่วนบุคคล | ใช้ได้กับการสาธิตด้วยบทสนทนาที่แต่งขึ้นเท่านั้น **ห้ามใช้กับนักเรียนจริง** |
-| Gemini API **แบบเปิด Cloud Billing** | ไม่นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ เก็บ log ระยะสั้นเพื่อตรวจการใช้ผิดนโยบาย | ใช้ในรอบนำร่องได้ ต้องเปิด billing ที่โปรเจกต์ของคีย์ |
-| Anthropic API | ลบ input/output ภายใน 30 วันโดยปริยาย ไม่ใช้ฝึกโมเดลเว้นแต่ได้รับอนุญาต ขอ zero data retention ได้เป็นรายองค์กร | ใช้ในรอบนำร่องได้ |
+| Gemini API **แบบเปิด Cloud Billing** | ไม่นำข้อความและคำตอบไปพัฒนาผลิตภัณฑ์ เก็บ log ระยะสั้นเพื่อตรวจการใช้ผิดนโยบาย **แต่** Service Specific Terms ของ Google Cloud ห้ามใช้ Generative AI Service ในบริการที่ “directed towards or is likely to be accessed by individuals under the age of 18” และห้ามใช้ “for clinical purposes … as a substitute for professional medical advice” (Gemini API Additional Terms มีข้อทำนองเดียวกัน — **[ต้องยืนยัน]**) | **ใช้กับนักเรียนอายุต่ำกว่า 18 ปีไม่ได้** ใช้ได้กับการสาธิตและการทดสอบด้วยบทสนทนาที่แต่งขึ้นเท่านั้น |
+| Anthropic API | ลบ input/output ภายใน 30 วันโดยปริยาย ไม่ใช้ฝึกโมเดลเว้นแต่ได้รับอนุญาต ขอ zero data retention ได้เป็นรายองค์กร Usage Policy (มีผล 12 พ.ย. 2026) อนุญาตผลิตภัณฑ์ที่ให้บริการผู้เยาว์เมื่อทำตามแนวทางเพิ่มเติม และจัดการ “assessing, diagnosing, or treating a mental health condition” เป็น high-risk: ต้องมีผู้มีคุณวุฒิทบทวนก่อนส่งถึงผู้ใช้ และต้องบอกว่าใช้ AI | ใช้ในรอบนำร่องได้ **เมื่อ** ทำตามแนวทางสำหรับผู้เยาว์ และให้ครูแนะแนวหรือนักจิตวิทยาทบทวนผลก่อนแสดงต่อนักเรียน — ต้นแบบปัจจุบันยังแสดงผลให้นักเรียนทันที ต้องแก้ก่อนใช้จริง |
 
 แหล่งที่มา: [Gemini API Additional Terms (ฉบับ 7 ต.ค. 2025)](https://ai.google.dev/gemini-api/terms-archive/terms_10_07_25) ·
+[Google Cloud Service Specific Terms](https://cloud.google.com/terms/service-terms) ·
+[Anthropic Usage Policy](https://www.anthropic.com/legal/aup) ·
 [Anthropic: commercial account data handling](https://privacy.claude.com/en/articles/8956058-i-have-a-commercial-account-how-do-you-handle-my-data) ·
 [Anthropic: API and data retention](https://platform.claude.com/docs/en/build-with-claude/api-and-data-retention)
 
@@ -334,7 +336,7 @@ npm run redteam -- --only=C1,M3 --verbose
 - login ยังไม่ verify จริง และ API ยังไม่มีการยืนยันตัวตน — ของจริงต้องเป็น Google Workspace / Microsoft ของโรงเรียน + Row Level Security
 - **[ต้องยืนยัน]** เกณฑ์จุดตัดใน `lib/instruments.ts` และพื้นความปลอดภัยใน `/api/risk` ต้องให้ผู้เชี่ยวชาญตรวจ + เช็กลิขสิทธิ์แบบประเมิน
 - **[ต้องยืนยัน]** สายด่วน 1300 / 1387 / 1413 / 1600 / 1165 ใน `lib/resources.ts` — เปิดแหล่งทางการ โทรทดสอบ แล้วค่อยเปลี่ยนเป็น `verified: true`
-- **[ต้องยืนยัน]** เงื่อนไขการเก็บข้อมูลของผู้ให้บริการ AI ฉบับปัจจุบัน และห้ามใช้คีย์ Gemini แบบไม่เสียเงินกับนักเรียนจริง
+- **[ต้องยืนยัน]** เงื่อนไขของผู้ให้บริการ AI ฉบับปัจจุบัน ทั้งเรื่องการเก็บข้อมูล การใช้กับผู้อายุต่ำกว่า 18 ปี และการใช้ด้านสุขภาพจิต — ห้ามใช้คีย์ Gemini กับนักเรียนจริง และก่อนใช้จริงต้องให้ผู้มีคุณวุฒิทบทวนผลก่อนแสดงต่อนักเรียน
 - **[ต้องยืนยัน]** ข้อมูลสถานพยาบาลใน `lib/demo.ts` เป็นตัวอย่าง
 - **[ต้องให้ผู้เชี่ยวชาญตรวจ]** ข้อความที่นักเรียนเห็นทั้งหมด: การ์ดช่วยเหลือ (`lib/resources.ts`) · ขั้นต่อไป (`lib/care.ts`) ·
   กิจกรรมดูแลตัวเอง (`lib/selfcare.ts`) · ประโยคเปิดเรื่องกับเพื่อนและข้อความชวนไปหาคน (`components/bridge.tsx`) · คำตอบของโหมดสาธิต (`lib/fallback.ts`)
