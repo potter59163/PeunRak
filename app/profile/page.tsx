@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shell, TopBar, Button, Card, Input, BottomNav } from "@/components/ui";
+import { Shell, TopBar, Button, Card, Input, BottomNav, Hotline } from "@/components/ui";
 import { Person, Logout, Check, Lock } from "@/components/icons";
 import { me, patch, signOut, type Me } from "@/lib/session";
+import { chooseLevel, getHandoff } from "@/lib/client";
+import { LEVELS, type Level } from "@/lib/handoff";
 
 const FIELDS = [
   { k: "name", label: "ชื่อ–สกุล", ph: "ปัณณ์ วรกุล" },
@@ -24,23 +26,45 @@ export default function Profile() {
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    const cur = me();
-    if (!cur) { router.replace("/"); return; }
-    setU(cur);
-    setV(JSON.parse(localStorage.getItem("kw.profile") ?? "{}"));
+    let alive = true;
+    // อ่านจากที่เก็บของเบราว์เซอร์หลัง hydrate แล้วค่อยตั้งค่า (ทำใน microtask ไม่ตั้ง state ตรง ๆ ใน effect)
+    queueMicrotask(async () => {
+      const cur = me();
+      if (!cur) { router.replace("/"); return; }
+      if (!alive) return;
+      setU(cur);
+      setV(JSON.parse(localStorage.getItem("kw.profile") ?? "{}"));
+      // ระดับการเปิดเผยจริงอยู่ที่ server — ดึงมาให้สวิตช์ตรงกับสิ่งที่ครูเห็นอยู่ตอนนี้
+      if (cur.role === "student" && (await getHandoff()) && alive) setU(me());
+    });
+    return () => { alive = false; };
   }, [router]);
 
-  function save() {
+  const level: Level = u?.level ?? 0;
+  const open = level >= 2;
+
+  async function save() {
     localStorage.setItem("kw.profile", JSON.stringify(v));
     patch({ name: v.name, room: v.room });
+    // ถ้าเปิดชื่อไว้อยู่แล้ว ชื่อใหม่ต้องไปถึงครูด้วย ถ้ายังไม่เปิด ชื่ออยู่ในเครื่องนี้เท่านั้น
+    if (open) await chooseLevel(level);
+    setU(me());
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   }
 
-  function toggleShare() {
-    const next = !u?.shared;
-    patch({ shared: next });
-    setU((s) => (s ? { ...s, shared: next } : s));
+  /**
+   * เปิด = L2 · ปิด = กลับไประดับที่เคยเลือกไว้ก่อนเปิด (ไม่เกิน L1)
+   * ชื่อถูกลบออกจากที่เก็บฝั่ง server ทันที ไม่ใช่แค่ซ่อน
+   */
+  async function toggleShare() {
+    if (open) {
+      await chooseLevel(Math.min(u?.levelBefore ?? 0, 1) as Level);
+    } else {
+      patch({ levelBefore: level });
+      await chooseLevel(2);
+    }
+    setU(me());
   }
 
   return (
@@ -68,10 +92,12 @@ export default function Profile() {
             <Lock size={18} className="shrink-0 text-ink-3" />
             <div className="min-w-0 flex-1">
               <p className="text-[0.92rem] text-ink">เปิดชื่อให้ครูแนะแนว</p>
-              <p className="mt-0.5 text-[0.79rem] text-ink-3">{u?.shared ? "ครูเห็นชื่อและห้อง" : "ครูเห็นเฉพาะรหัสนิรนาม"}</p>
+              <p className="mt-0.5 text-[0.79rem] text-ink-3">
+                {LEVELS[level].short} · {open ? "ครูเห็นชื่อและห้อง" : "ครูเห็นเฉพาะรหัสนิรนาม ชื่ออยู่ในเครื่องนี้เท่านั้น"}
+              </p>
             </div>
-            <span className={`relative h-6 w-11 shrink-0 rounded-full transition ${u?.shared ? "bg-accent" : "bg-line"}`}>
-              <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${u?.shared ? "left-[22px]" : "left-0.5"}`} />
+            <span role="switch" aria-checked={open} className={`relative h-6 w-11 shrink-0 rounded-full transition ${open ? "bg-accent" : "bg-line"}`}>
+              <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${open ? "left-[22px]" : "left-0.5"}`} />
             </span>
           </button>
         </Card>
@@ -88,6 +114,7 @@ export default function Profile() {
         </Button>
       </main>
 
+      <Hotline />
       <BottomNav />
     </Shell>
   );

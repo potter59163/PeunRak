@@ -1,13 +1,40 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Shell, TopBar, Button, BottomNav, Hotline } from "@/components/ui";
-import { Mark, Send, Lock, ChevronRight } from "@/components/icons";
-import { me } from "@/lib/session";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { Shell, TopBar, Button, BottomNav, Hotline } from "@/components/ui";
+import { Mark, Send, Lock, ChevronRight, Bridge, Bell } from "@/components/icons";
+import { BridgeSheet, HelpCards, SafetyCard, Nudge, type BridgeStep, type NudgeKind } from "@/components/bridge";
+import { me, myId, identity, saveLast, chatStart, type Last } from "@/lib/session";
+import { getHandoff, usePoll } from "@/lib/client";
+import { reminderOf, thaiDate, TRACK_LABEL, type HandoffState } from "@/lib/handoff";
+import type { DomainId } from "@/lib/domains";
 
 type Msg = { role: "user" | "assistant"; content: string };
-const OPENING = "สวัสดี ช่วงนี้เป็นยังไงบ้าง เล่าเท่าที่อยากเล่าก็ได้";
+
+/** ข้อความแรกต้องบอกว่าเป็น AI และไม่ได้มาแทนคน (APA Health Advisory, 2025) */
+const OPENING =
+  "สวัสดี เราเป็น AI ผู้ช่วยรับฟัง ไม่ใช่คนจริง และไม่ได้มาแทนเพื่อน ครู หรือผู้เชี่ยวชาญ\n\nช่วงนี้เป็นยังไงบ้าง เล่าเท่าที่อยากเล่าก็ได้ ถ้าอยากคุยกับคนจริงเมื่อไหร่ กดปุ่ม พาไปหาคน ได้เลย";
+
+/** ชวนไปหาคนจริงทุกกี่รอบ */
+const NUDGE_EVERY = 8;
+/** คุยต่อเนื่องเกินกี่นาทีจึงเตือนพัก — ตั้ง NEXT_PUBLIC_BREAK_MINUTES ให้สั้นลงได้ตอนสาธิต */
+const BREAK_MS = (Number(process.env.NEXT_PUBLIC_BREAK_MINUTES) || 30) * 6e4;
+
+const RANK = { low: 0, medium: 1, high: 2 } as const;
+
+/** แถบเตือนจากเส้นทางของตัวเอง: นัดหมาย · เช็กอินหลังนัด · ครูรับเรื่องแล้ว */
+function noticeOf(h: HandoffState | null): string | null {
+  if (!h) return null;
+  const who = h.refTrack ? TRACK_LABEL[h.refTrack] : "ครูแนะแนว";
+  const r = reminderOf(h);
+  if (r === "today") return `วันนี้มีนัดกับ${who}`;
+  if (r === "tomorrow") return `พรุ่งนี้มีนัดกับ${who} (${thaiDate(h.apptAt)})`;
+  if (r === "checkin") return "นัดผ่านมาแล้ว ได้ไปไหม บอกเราหน่อยได้นะ";
+  if (h.refStatus === "sent") return h.refTrack === "school" ? "ครูแนะแนวชวนเธอมาคุย" : "ครูแนะแนวกำลังประสานผู้เชี่ยวชาญให้";
+  if (h.helpAckAt) return "ครูแนะแนวรับเรื่องที่เธอขอไว้แล้ว";
+  return null;
+}
 
 export default function Chat() {
   const [msgs, setMsgs] = useState<Msg[]>([{ role: "assistant", content: OPENING }]);
@@ -15,23 +42,67 @@ export default function Chat() {
   const [busy, setBusy] = useState(false);
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [demo, setDemo] = useState(false);
+  const [risk, setRisk] = useState<Last | null>(null);
+  const [sheet, setSheet] = useState<BridgeStep | null>(null);
+  const [nudge, setNudge] = useState<NudgeKind | null>(null);
+  const [hidden, setHidden] = useState<DomainId[]>([]);
+  const [handoff, setHandoff] = useState<HandoffState | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  /** ระดับความเสี่ยงสูงสุดที่เคยชวนไปแล้ว — ขยับขึ้นเมื่อไหร่ถึงชวนใหม่ */
+  const nudgedRank = useRef(0);
+  const breaks = useRef(0);
+  const started = useRef(0);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [msgs, busy, nudge, risk]);
 
-  /** AI ตัวที่สอง — ยิงเบื้องหลัง ไม่บล็อกการคุย และไม่แสดงผลให้นักเรียนเห็น */
-  function scoreInBackground(history: Msg[]) {
-    const u = me();
-    fetch("/api/risk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: u?.id ?? "a73",
-        messages: history,
-        profile: { name: u?.name, room: u?.room, shared: u?.shared },
-      }),
-    }).catch(() => {});
+  const turns = msgs.filter((m) => m.role === "user").length;
+
+  // เส้นทางของตัวเอง (นัดหมาย / ครูรับเรื่อง) — ดึงเป็นระยะ ไม่เกี่ยวกับเนื้อหาแชท
+  const loadHandoff = useCallback(async () => {
+    const h = await getHandoff();
+    if (h) setHandoff(h);
+  }, []);
+  usePoll(loadHandoff, 15000);
+
+  // เตือนพักเมื่อคุยต่อเนื่องนาน
+  useEffect(() => {
+    const iv = setInterval(() => {
+      if (!started.current) return;
+      const due = Math.floor((Date.now() - started.current) / BREAK_MS);
+      if (due > breaks.current) { breaks.current = due; setNudge("break"); }
+    }, 5000);
+    return () => clearInterval(iv);
+  }, []);
+
+  /** AI ตัวที่สอง — ยิงเบื้องหลัง ไม่บล็อกการคุย นักเรียนเห็นแค่การ์ดช่องทางช่วยเหลือ ไม่เห็นคะแนน */
+  async function scoreInBackground(history: Msg[], n: number) {
+    const level = me()?.level;
+    // ชื่อกับห้องออกจากเครื่องนี้เฉพาะเมื่อเลือกเปิดชื่อเอง (L2 ขึ้นไป)
+    const who = (level ?? 0) >= 2 ? identity() : {};
+    try {
+      const res = await fetch("/api/risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: myId(),
+          messages: history,
+          profile: { level, name: who.name, room: who.room },
+        }),
+      });
+      if (!res.ok) return;
+      const r = (await res.json()) as Last;
+      saveLast(r);
+      setRisk(r);
+
+      // สะพานไปหาคนจริง: เมื่อระดับขยับขึ้น หรือคุยมาครบทุก ๆ NUDGE_EVERY รอบ
+      if (RANK[r.risk] > nudgedRank.current) {
+        nudgedRank.current = RANK[r.risk];
+        setNudge("zone");
+      } else if (n % NUDGE_EVERY === 0) {
+        setNudge((cur) => cur ?? "turns");
+      }
+    } catch { /* เงียบไว้ การคุยต้องไม่สะดุดเพราะการประเมิน */ }
   }
 
   async function send() {
@@ -42,7 +113,8 @@ export default function Chat() {
     setDraft("");
     setBusy(true);
     if (taRef.current) taRef.current.style.height = "auto";
-    scoreInBackground(next);
+    if (!started.current) started.current = chatStart();
+    scoreInBackground(next, next.filter((m) => m.role === "user").length);
 
     try {
       const res = await fetch("/api/chat", {
@@ -61,9 +133,12 @@ export default function Chat() {
         setMsgs([...next, { role: "assistant", content: acc }]);
       }
     } catch {
-      setMsgs([...next, { role: "assistant", content: "ระบบขัดข้องชั่วคราว ลองอีกครั้งนะ" }]);
+      setMsgs([...next, { role: "assistant", content: "ระบบขัดข้องชั่วคราว ลองอีกครั้งนะ ถ้าเร่งด่วนโทร 1323 ได้เลย" }]);
     } finally { setBusy(false); }
   }
+
+  const domains = (risk?.domains ?? []).filter((d) => !hidden.includes(d.id));
+  const notice = noticeOf(handoff);
 
   return (
     <Shell pad>
@@ -75,13 +150,13 @@ export default function Chat() {
               โหมดสาธิต
             </span>
           ) : null}
-          <button onClick={() => setShowPrivacy((v) => !v)}
+          <button onClick={() => setShowPrivacy((v) => !v)} aria-expanded={showPrivacy}
             className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-2.5 py-1.5 text-[0.75rem] text-ink-2 transition hover:text-ink">
             <span className="relative flex size-1.5">
               <span className="ping absolute inline-flex size-1.5 rounded-full bg-calm" />
               <span className="relative inline-flex size-1.5 rounded-full bg-calm" />
             </span>
-            ปลอดภัย
+            คุยกับ AI
           </button>
           </>
         }
@@ -92,11 +167,20 @@ export default function Chat() {
           <div className="flex gap-3">
             <Lock size={16} className="mt-0.5 shrink-0 text-accent" />
             <div className="space-y-1.5 text-[0.84rem] leading-relaxed">
-              <p className="text-ink">ระบบประเมินความเสี่ยงจากบทสนทนาโดยอัตโนมัติ</p>
-              <p className="text-ink-3">ครูแนะแนวเห็นเฉพาะระดับความเสี่ยง ไม่เห็นข้อความที่เธอพิมพ์</p>
+              <p className="text-ink">เธอกำลังคุยกับ AI ไม่ใช่คนจริง และระบบประเมินความเสี่ยงจากบทสนทนาโดยอัตโนมัติ</p>
+              <p className="text-ink-3">ข้อความไม่ถูกบันทึก ครูแนะแนวเห็นเฉพาะระดับความเสี่ยงแบบไม่ระบุชื่อ จนกว่าเธอจะเลือกเปิดเผยเพิ่มเอง</p>
+              <p className="text-ink-3">ข้อความถูกส่งไปให้ผู้ให้บริการ AI ประมวลผลเพื่อสร้างคำตอบ จึงไม่ควรพิมพ์ชื่อจริง เบอร์โทร หรือที่อยู่</p>
             </div>
           </div>
         </div>
+      ) : null}
+
+      {notice ? (
+        <Link href="/journey" className="rise lift mb-4 flex items-center gap-3 rounded-[20px] border border-accent/25 bg-accent-soft px-4 py-3">
+          <Bell size={17} className="shrink-0 text-accent" />
+          <span className="flex-1 text-[0.88rem] text-ink">{notice}</span>
+          <ChevronRight size={16} className="shrink-0 text-accent" />
+        </Link>
       ) : null}
 
       <main className="flex flex-1 flex-col">
@@ -124,19 +208,29 @@ export default function Chat() {
               </div>
             )
           )}
+
+          {/* ชั้นความปลอดภัยที่ไม่พึ่งคำตอบของแชทบอท — มาจากผลของ AI ตัวที่สอง */}
+          {risk && risk.safety !== "none" ? <SafetyCard crisis={risk.safety === "crisis"} onBridge={() => setSheet("who")} /> : null}
+          {nudge ? <Nudge kind={nudge} onPick={(s) => { setNudge(null); setSheet(s); }} onDismiss={() => setNudge(null)} /> : null}
+          <HelpCards domains={domains} onBridge={() => setSheet("counselor")}
+            onHide={(id) => setHidden((h) => [...h, id])} />
           <div ref={endRef} />
         </div>
 
-        {msgs.filter((m) => m.role === "user").length >= 4 ? (
-          <Link href="/result" className="rise lift mb-3 flex items-center gap-3 rounded-full border border-accent/20 bg-accent-soft px-5 py-3.5">
-            <span className="flex-1 text-[0.9rem] font-medium text-accent">ดูสรุป</span>
-            <ChevronRight size={16} className="text-accent" />
-          </Link>
-        ) : null}
-
         <div className="sticky bottom-[92px] -mx-1 rounded-t-[28px] bg-paper/75 px-1 pb-3 pt-2 backdrop-blur-md">
+          <div className="mb-2 flex items-center gap-2">
+            <button type="button" onClick={() => setSheet("who")}
+              className="lift inline-flex min-h-[42px] items-center gap-2 rounded-full border border-accent/25 bg-surface px-4 text-[0.88rem] font-medium text-accent shadow-[var(--sh-1)]">
+              <Bridge size={16} /> พาไปหาคน
+            </button>
+            {turns >= 4 ? (
+              <Link href="/result" className="rise lift ml-auto inline-flex min-h-[42px] items-center gap-1.5 rounded-full border border-accent/20 bg-accent-soft px-4 text-[0.88rem] font-medium text-accent">
+                ดูสรุป <ChevronRight size={15} />
+              </Link>
+            ) : null}
+          </div>
           <div className="flex items-end gap-2 rounded-[26px] border border-line bg-surface p-2 pl-5 shadow-[var(--sh-2)] transition focus-within:border-accent">
-            <textarea ref={taRef} rows={1} value={draft}
+            <textarea ref={taRef} rows={1} value={draft} aria-label="ข้อความ"
               onChange={(e) => { setDraft(e.target.value); e.target.style.height = "auto"; e.target.style.height = `${Math.min(e.target.scrollHeight, 130)}px`; }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
               placeholder="พิมพ์ข้อความ"
@@ -150,6 +244,10 @@ export default function Chat() {
 
       <Hotline />
       <BottomNav />
+
+      {sheet ? (
+        <BridgeSheet step={sheet} onStep={setSheet} domains={risk?.domains ?? []} onSent={setHandoff} />
+      ) : null}
     </Shell>
   );
 }

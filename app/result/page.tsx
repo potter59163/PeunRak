@@ -3,8 +3,12 @@
 import { useState } from "react";
 import { Shell, TopBar, Button, Card, zoneClass, Hotline, BottomNav } from "@/components/ui";
 import { Moon, Pulse, Device, Clock, Quote, Check, EyeOff, Users, Eye, Hospital, ChevronRight } from "@/components/icons";
+import { BridgeSheet, HelpCards, type BridgeStep } from "@/components/bridge";
 import { Q9, GAD7, Q8, scoreOf, readVitals, combine, ZONE_COPY, type Zone } from "@/lib/instruments";
-import { DEMO_EXTRACTIONS, DEMO_VITALS } from "@/lib/demo";
+import { DEMO_EXTRACTIONS, DEMO_VITALS, DEMO_DOMAINS } from "@/lib/demo";
+import { LEVELS as LADDER, type Level } from "@/lib/handoff";
+import { chooseLevel, useHydrated } from "@/lib/client";
+import { last, myLevel } from "@/lib/session";
 
 const s9 = scoreOf(Q9, DEMO_EXTRACTIONS);
 const sG = scoreOf(GAD7, DEMO_EXTRACTIONS);
@@ -13,18 +17,34 @@ const ZONE: Zone = combine([s9.zone, sG.zone], s8.raw);
 const vitals = readVitals(DEMO_VITALS);
 const ICON = { sleep: Moon, quality: Clock, activity: Pulse, screen: Device } as const;
 
-const LEVELS = [
-  { Icon: EyeOff, title: "เก็บไว้ดูเอง", sub: "ไม่มีใครเห็น" },
-  { Icon: Users, title: "ให้ครูรู้แบบไม่ระบุตัวตน", sub: "ครูเห็นระดับความเสี่ยง ไม่เห็นชื่อ ไม่เห็นแชท", tag: "แนะนำ" },
-  { Icon: Eye, title: "เปิดชื่อให้ครู", sub: "ครูเห็นชื่อและห้อง" },
-  { Icon: Hospital, title: "ส่งต่อโรงพยาบาล", sub: "ระบบเตรียมเอกสารให้" },
-];
+/** ข้อความของแต่ละขั้นมาจาก lib/handoff.ts ที่เดียว — หน้านี้ หน้าไปหาคน และแดชบอร์ดครูใช้ชุดเดียวกัน */
+const ICONS = [EyeOff, Users, Eye, Hospital];
+const LEVELS = LADDER.map((l, i) => ({ ...l, Icon: ICONS[i], tag: i === 1 ? "แนะนำ" : undefined }));
 
 export default function Result() {
-  const [level, setLevel] = useState<number | null>(null);
+  const hydrated = useHydrated();
+  const [picked, setPicked] = useState<number | null>(null);
   const [why, setWhy] = useState(false);
   const [done, setDone] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [sheet, setSheet] = useState<BridgeStep | null>(null);
   const c = zoneClass[ZONE];
+
+  // ระดับที่เคยเลือกไว้ และหมวดเรื่องจากการคุยรอบล่าสุด (ถ้ายังไม่ได้คุย ใช้ชุดตัวอย่างเดียวกับคะแนนด้านบน)
+  const level = picked ?? (hydrated ? myLevel() : null);
+  const setLevel = setPicked;
+  const domains = hydrated ? last()?.domains ?? DEMO_DOMAINS : [];
+
+  /** บันทึกระดับที่เลือกจริง — เดิมหน้านี้แค่เปลี่ยนหน้าจอ ไม่ได้ส่งอะไรไปไหน */
+  async function confirm() {
+    if (level === null) return;
+    setSaving(true); setFailed(false);
+    const ok = await chooseLevel(level as Level);
+    setSaving(false);
+    if (ok) setDone(true);
+    else setFailed(true);
+  }
 
   if (done)
     return (
@@ -33,9 +53,12 @@ export default function Result() {
         <main className="rise flex flex-1 flex-col justify-center py-10">
           <div className="grid size-11 place-items-center rounded-full bg-accent-soft text-accent"><Check size={20} /></div>
           <h1 className="mt-5 text-[1.5rem] font-semibold text-ink">บันทึกแล้ว</h1>
-          <p className="mt-2 text-[0.93rem] text-ink-2">เปลี่ยนใจตอนไหนก็ได้</p>
+          <p className="mt-2 text-[0.93rem] leading-relaxed text-ink-2">
+            {level !== null ? LEVELS[level].sub : null} เปลี่ยนใจตอนไหนก็ได้ที่แท็บ ไปหาคน
+          </p>
           <div className="mt-6 space-y-2.5">
-            <Button href="/tests" size="lg" full>ลองทำแบบทดสอบ <ChevronRight size={16} /></Button>
+            <Button href="/journey" size="lg" full>ดูเส้นทางไปหาคน <ChevronRight size={16} /></Button>
+            <Button href="/tests" variant="line" size="lg" full>ลองทำแบบทดสอบ</Button>
             {level === 3 ? <Button href="/referral" variant="line" size="lg" full>ดูเอกสารส่งต่อ</Button> : null}
           </div>
         </main>
@@ -98,6 +121,13 @@ export default function Result() {
           ) : null}
         </Card>
 
+        {domains.length > 0 ? (
+          <div>
+            <p className="mb-2.5 text-[0.84rem] font-medium text-ink-2">มีคนที่ช่วยเรื่องนี้ได้</p>
+            <HelpCards domains={domains} onBridge={() => setSheet("counselor")} />
+          </div>
+        ) : null}
+
         <div>
           <p className="mb-1 text-[1.05rem] font-medium text-ink">ให้ใครรู้บ้าง</p>
           <p className="mb-3 text-[0.83rem] text-ink-3">เปลี่ยนใจตอนไหนก็ได้</p>
@@ -106,7 +136,7 @@ export default function Result() {
               const on = level === i;
               return (
                 <li key={i}>
-                  <button onClick={() => setLevel(i)}
+                  <button onClick={() => setLevel(i)} aria-pressed={on}
                     className={`flex w-full items-start gap-3.5 rounded-[var(--r-lg)] border p-4 text-left transition ${on ? "border-accent/60 bg-accent-soft shadow-[var(--sh-1)]" : "border-line bg-surface shadow-[var(--sh-1)] hover:border-accent/40 hover:-translate-y-0.5"}`}>
                     <l.Icon size={18} className={`mt-0.5 shrink-0 ${on ? "text-accent" : "text-ink-3"}`} />
                     <span className="min-w-0 flex-1">
@@ -126,10 +156,12 @@ export default function Result() {
           </ul>
         </div>
 
-        <Button size="lg" full disabled={level === null} onClick={() => setDone(true)}>ยืนยัน</Button>
+        {failed ? <p className="text-[0.84rem] text-care">บันทึกไม่สำเร็จ ลองอีกครั้งนะ</p> : null}
+        <Button size="lg" full disabled={level === null || saving} onClick={confirm}>{saving ? "กำลังบันทึก" : "ยืนยัน"}</Button>
       </main>
       <Hotline />
       <BottomNav />
+      {sheet ? <BridgeSheet step={sheet} onStep={setSheet} domains={domains} /> : null}
     </Shell>
   );
 }

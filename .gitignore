@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# red-team reports (สร้างใหม่ได้ด้วย npm run redteam)
+/scripts/redteam/reports/

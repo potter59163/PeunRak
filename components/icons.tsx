@@ -286,3 +286,35 @@ export const Bolt = (p: P) => (
     <path d="M13.2 2.8L4.8 13.4h6L10.2 21l8.4-10.6h-6l.6-7.6z" />
   </S>
 );
+
+export const Close = (p: P) => (
+  <S {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </S>
+);
+
+export const Calendar = (p: P) => (
+  <S {...p}>
+    <rect x="3.8" y="5.2" width="16.4" height="15" rx="2.2" />
+    <path d="M3.8 10h16.4M8.2 3.2v3.6M15.8 3.2v3.6" />
+  </S>
+);
+
+/* ป้ายบอกทาง — เส้นทางไปหาคนจริง */
+export const Signpost = (p: P) => (
+  <S {...p}>
+    <path d="M12 3v18" />
+    <path d="M12 5.2h6.2l2 2.3-2 2.3H12z" />
+    <path d="M12 11.6H6.4l-2 2.3 2 2.3H12z" />
+  </S>
+);
+
+/* สะพาน — AI เป็นทางผ่านไปหาคน ไม่ใช่ปลายทาง */
+export const Bridge = (p: P) => (
+  <S {...p}>
+    <path d="M2.8 16.5h18.4" />
+    <path d="M4.6 16.5V9M19.4 16.5V9" />
+    <path d="M4.6 9.4c2.6 3.6 12.2 3.6 14.8 0" />
+    <path d="M9 12.1v4.4M15 12.1v4.4" />
+  </S>
+);

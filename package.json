@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "redteam": "node scripts/redteam/run.mjs",
+    "redteam:demo": "node scripts/redteam/run.mjs --demo"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
