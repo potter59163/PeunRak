@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { fallbackReply } from "./fallback";
+import { fallbackReply, mentionsSelfHarm } from "./fallback";
 import { redact } from "./redact";
 
 /**
@@ -52,6 +52,8 @@ function typeOut(text: string) {
 }
 
 const FAIL = "ระบบขัดข้องชั่วคราว ลองพิมพ์อีกครั้งนะ ถ้าเร่งด่วนโทร 1323 ได้เลย";
+/** ต่อท้ายเมื่อนักเรียนพูดถึงการทำร้ายตัวเองแต่คำตอบของโมเดลไม่มีสายด่วน — ตัดสินด้วยโค้ด ไม่ฝากไว้ที่โมเดล */
+const HOTLINE = "\n\nถ้าตอนนี้รู้สึกไม่ปลอดภัย โทร 1323 สายด่วนสุขภาพจิต คุยได้ตลอด 24 ชั่วโมง หรือ 1669 ถ้าอันตรายเดี๋ยวนี้ หรือกด “พาไปหาคน” ให้ครูแนะแนวติดต่อกลับก็ได้นะ";
 /** ต่อท้ายเมื่อโมเดลหยุดกลางคัน — นักเรียนต้องไม่ถูกทิ้งไว้กับประโยคที่ค้าง */
 const CUT = "\n\nขอโทษนะ เราตอบต่อไม่ได้ในตอนนี้ ถ้าอยากคุยกับคนจริง กด “พาไปหาคน” หรือโทร 1323 ได้เลย";
 
@@ -67,6 +69,8 @@ export async function chatStream(messages: Msg[], system: string, forceDemo = fa
     async start(c) {
       const e = enc();
       let sent = false;
+      let said = "";
+      const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
       try {
         const s = client.messages.stream({
           model: CLAUDE_CHAT,
@@ -84,6 +88,7 @@ export async function chatStream(messages: Msg[], system: string, forceDemo = fa
         for await (const ev of s) {
           if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
             c.enqueue(e.encode(ev.delta.text));
+            said += ev.delta.text;
             sent = true;
           }
         }
@@ -95,6 +100,7 @@ export async function chatStream(messages: Msg[], system: string, forceDemo = fa
          */
         if (!sent) c.enqueue(e.encode(fallbackReply(messages)));
         else if (done.stop_reason === "refusal") c.enqueue(e.encode(CUT));
+        else if (mentionsSelfHarm(lastUser) && !said.includes("1323")) c.enqueue(e.encode(HOTLINE));
       } catch {
         c.enqueue(e.encode(sent ? CUT : FAIL));
       }

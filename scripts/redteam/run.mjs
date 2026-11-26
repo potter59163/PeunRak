@@ -43,7 +43,8 @@ const headers = { "Content-Type": "application/json", ...(DEMO ? { "X-Force-Demo
 
 async function up(base) {
   try {
-    const r = await fetch(`${base}/api/monitor`, { signal: AbortSignal.timeout(4000) });
+    // เซิร์ฟเวอร์จริงบน Vercel ตอบครั้งแรกช้ากว่า localhost (cold start) จึงรอได้ถึง 15 วินาที
+    const r = await fetch(`${base}/api/monitor`, { signal: AbortSignal.timeout(15000) });
     return r.ok;
   } catch {
     return false;

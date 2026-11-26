@@ -6,7 +6,7 @@ import {
 } from "@/lib/instruments";
 import { DOMAINS, DOMAIN_INFO, cleanDomains, detectDomains, shown } from "@/lib/domains";
 import { toLevel } from "@/lib/handoff";
-import { IDEATION } from "@/lib/fallback";
+import { IDEATION, mentionsSelfHarm } from "@/lib/fallback";
 
 export const runtime = "nodejs";
 
@@ -172,7 +172,8 @@ export async function POST(req: Request) {
    * มีหลักฐานข้อ 9 ของ 9Q หรือข้อใดของ 8Q แม้ระดับน้อย ต้องไม่ถูกจัดเป็น "เสี่ยงต่ำ / ข้อมูลยังไม่พอ"
    * [ต้องยืนยัน] ให้ผู้เชี่ยวชาญตรวจเกณฑ์นี้พร้อมกับจุดตัดใน lib/instruments.ts
    */
-  const ideation = ex.some((e) => e.itemId === "9Q_9" && e.score > 0 && e.confidence >= CONFIDENCE_FLOOR);
+  // ถ้าโมเดลไม่ได้สกัดข้อ 9 แต่นักเรียนพิมพ์คำที่สื่อถึงการทำร้ายตัวเองชัด ๆ ก็ถือเป็นสัญญาณเช่นกัน (ตาข่ายด้วยโค้ด)
+  const ideation = ex.some((e) => e.itemId === "9Q_9" && e.score > 0 && e.confidence >= CONFIDENCE_FLOOR) || mentionsSelfHarm(joined);
   let zone: Zone = combine([s9.zone, sG.zone, s8.zone], s8.raw);
   if (ideation && zone === "calm") zone = "watch";
   /** ใช้ขึ้นการ์ดสายด่วนในหน้าแชท โดยไม่พึ่งว่าแชทบอทจะพูดถึงเองหรือไม่ */
